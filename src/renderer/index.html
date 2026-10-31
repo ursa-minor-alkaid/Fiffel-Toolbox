@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*; frame-src tbx:"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>Fiffel</title>
+    <script>
+      try {
+        var known = ['neon', 'terminal', 'frost', 'paper', 'whirl']
+        var stored = localStorage.getItem('fiffel:skin') || localStorage.getItem('toolbox:skin')
+        if (known.indexOf(stored) < 0) {
+          var legacy = localStorage.getItem('toolbox:theme')
+          stored = legacy === 'light' ? 'paper' : legacy === 'dark' ? 'neon' : 'whirl'
+        }
+        document.documentElement.dataset.skin = stored
+      } catch (e) {}
+    </script>
+    <style>
+      html,
+      body {
+        background: #06050d;
+      }
+      html[data-skin='terminal'],
+      html[data-skin='terminal'] body {
+        background: #030805;
+      }
+      html[data-skin='frost'],
+      html[data-skin='frost'] body {
+        background: #d8e8f6;
+      }
+      html[data-skin='paper'],
+      html[data-skin='paper'] body {
+        background: #f4efe3;
+      }
+      html[data-skin='whirl'],
+      html[data-skin='whirl'] body {
+        background: #f1f1ee;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

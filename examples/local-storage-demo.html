@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>本地存储演示</title>
+<style>
+  :root {
+    --bg: #06050d;
+    --panel: #0d0c18;
+    --panel-2: #12111f;
+    --line: #23223a;
+    --text: #e9e7f3;
+    --dim: #8b89a4;
+    --accent: #3f9dc0;
+    --accent-soft: rgba(63, 157, 192, 0.14);
+    --mono: ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  body {
+    font: 14px/1.65 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 34px 24px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .head { display: flex; flex-direction: column; gap: 8px; }
+
+  .head-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .sub {
+    margin: 0;
+    color: var(--dim);
+    font-size: 13px;
+    max-width: 62ch;
+  }
+
+  .badge {
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+
+  .badge.on {
+    color: var(--accent);
+    border-color: rgba(63, 157, 192, 0.5);
+    background: var(--accent-soft);
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    margin: 6px 0 0;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .stats div {
+    background: var(--panel);
+    padding: 10px 12px;
+  }
+
+  .stats dt {
+    margin: 0 0 2px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--dim);
+  }
+
+  .stats dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+
+  .counter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .counter-row output {
+    min-width: 84px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 30px;
+    line-height: 1.2;
+    color: var(--accent);
+  }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 7px 14px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  button:hover { border-color: rgba(63, 157, 192, 0.55); }
+  button:active { background: #171628; }
+
+  button.ghost {
+    background: transparent;
+    color: var(--dim);
+  }
+
+  button.ghost:hover { color: var(--text); }
+
+  button.small {
+    padding: 3px 10px;
+    font-size: 12px;
+  }
+
+  textarea {
+    width: 100%;
+    resize: vertical;
+    min-height: 96px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    font: 13px/1.6 var(--mono);
+  }
+
+  textarea:focus,
+  button:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .spacer { flex: 1; }
+
+  .hint {
+    margin: 0;
+    color: var(--dim);
+    font-size: 12px;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--dim);
+    font-weight: 500;
+    padding: 0 8px 6px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  td {
+    padding: 7px 8px;
+    border-bottom: 1px solid rgba(35, 34, 58, 0.6);
+    vertical-align: top;
+    font-size: 12px;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .mono { font-family: var(--mono); }
+
+  td.val {
+    color: var(--dim);
+    word-break: break-all;
+  }
+
+  td.key { color: var(--text); }
+
+  th.op,
+  td.op { width: 72px; text-align: right; }
+
+  .empty-row td {
+    color: var(--dim);
+    text-align: center;
+    padding: 18px 8px;
+  }
+
+  footer {
+    color: var(--dim);
+    font-size: 12px;
+    line-height: 1.7;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+
+  footer ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="head">
+    <div class="head-top">
+      <h1>本地存储演示</h1>
+      <span id="env" class="badge">检测中</span>
+    </div>
+    <p class="sub">用于验证「HTML 应用」的存储能力。改动写入 localStorage，刷新页面或重启应用后数据应保留。</p>
+    <dl class="stats">
+      <div>
+        <dt>存储键</dt>
+        <dd id="stat-keys">0</dd>
+      </div>
+      <div>
+        <dt>storage 事件</dt>
+        <dd id="stat-events">0</dd>
+      </div>
+      <div>
+        <dt>最后写入</dt>
+        <dd id="stat-write">-</dd>
+      </div>
+      <div>
+        <dt>页面来源</dt>
+        <dd id="stat-proto">-</dd>
+      </div>
+    </dl>
+  </header>
+
+  <section class="card">
+    <h2>计数器</h2>
+    <div class="counter-row">
+      <button id="dec" aria-label="减一">−</button>
+      <output id="count">0</output>
+      <button id="inc" aria-label="加一">＋</button>
+      <span class="spacer"></span>
+      <button id="reset" class="ghost">归零</button>
+    </div>
+    <p class="hint">键 <code>demo:counter</code>，值为整数字符串。</p>
+  </section>
+
+  <section class="card">
+    <h2>便签</h2>
+    <textarea id="note" placeholder="输入内容，停止输入 300ms 后自动保存。"></textarea>
+    <div class="row">
+      <span id="note-state" class="hint">未修改</span>
+      <span class="spacer"></span>
+      <button id="note-clear" class="ghost small">清空便签</button>
+    </div>
+    <p class="hint">键 <code>demo:note</code>，用于验证长文本与多键分开存储。</p>
+  </section>
+
+  <section class="card">
+    <h2>存储快照</h2>
+    <table>
+      <colgroup>
+        <col style="width: 32%" />
+        <col />
+        <col style="width: 72px" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>键</th>
+          <th>值</th>
+          <th class="op">操作</th>
+        </tr>
+      </thead>
+      <tbody id="snap-body"></tbody>
+    </table>
+    <div class="row">
+      <button id="refresh" class="ghost small">刷新快照</button>
+      <span class="spacer"></span>
+      <button id="clear-all" class="ghost small">清空全部</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>运行面板测试</h2>
+    <div class="row">
+      <button id="boom" class="ghost small">抛出异常</button>
+      <button id="warn" class="ghost small">打印警告</button>
+      <button id="reject" class="ghost small">未处理的拒绝</button>
+    </div>
+    <p class="hint">触发后宿主底部「控制台」会记录并自动展开；保存本文件改动可验证自动重载。</p>
+  </section>
+
+  <footer>
+    写入路径：页面内存对象 → 批量提交到宿主 → 落盘为 JSON。宿主侧每 60ms 合并一次变更，页面隐藏、关闭或每 1.5 秒也会补交一次。
+    <ul>
+      <li>徽标显示「Fiffel 内置存储」时，数据由 Fiffel 托管；显示「浏览器原生 localStorage」时，页面是被浏览器直接打开的。</li>
+      <li>Fiffel 注入的存储层会在同页面派发 storage 事件，原生浏览器只在其他页面修改时才派发，可据此区分两种运行环境。</li>
+    </ul>
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict'
+
+  var KEY_COUNT = 'demo:counter'
+  var KEY_NOTE = 'demo:note'
+
+  var storageEvents = 0
+  var lastWriteAt = 0
+  var noteTimer = null
+
+  var envEl = document.getElementById('env')
+  var statKeys = document.getElementById('stat-keys')
+  var statEvents = document.getElementById('stat-events')
+  var statWrite = document.getElementById('stat-write')
+  var statProto = document.getElementById('stat-proto')
+  var countEl = document.getElementById('count')
+  var noteEl = document.getElementById('note')
+  var noteState = document.getElementById('note-state')
+  var snapBody = document.getElementById('snap-body')
+
+  function inToolbox() {
+    try {
+      return location.protocol === 'tbx:' || localStorage.__tbx === true
+    } catch (err) {
+      return false
+    }
+  }
+
+  function read(key, fallback) {
+    try {
+      var value = localStorage.getItem(key)
+      return value === null ? fallback : value
+    } catch (err) {
+      return fallback
+    }
+  }
+
+  function write(key, value) {
+    try {
+      localStorage.setItem(key, String(value))
+      lastWriteAt = Date.now()
+      return true
+    } catch (err) {
+      noteState.textContent = '写入失败：' + (err && err.message ? err.message : '未知错误')
+      return false
+    }
+  }
+
+  function pad(value) {
+    return String(value).padStart(2, '0')
+  }
+
+  function formatClock(ms) {
+    if (!ms) return '-'
+    var d = new Date(ms)
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+  }
+
+  function currentCount() {
+    var value = Number(read(KEY_COUNT, '0'))
+    return isFinite(value) ? value : 0
+  }
+
+  function renderCount() {
+    countEl.textContent = String(currentCount())
+  }
+
+  function renderEnv() {
+    var inside = inToolbox()
+    envEl.textContent = inside ? 'Fiffel 内置存储' : '浏览器原生 localStorage'
+    envEl.className = inside ? 'badge on' : 'badge'
+    statProto.textContent = location.protocol || '-'
+  }
+
+  function renderSnapshot() {
+    while (snapBody.firstChild) snapBody.removeChild(snapBody.firstChild)
+
+    var keys = []
+    try {
+      for (var i = 0; i < localStorage.length; i += 1) {
+        var key = localStorage.key(i)
+        if (key !== null) keys.push(key)
+      }
+    } catch (err) {
+      keys = []
+    }
+    keys.sort()
+
+    statKeys.textContent = String(keys.length)
+    statWrite.textContent = formatClock(lastWriteAt)
+    statEvents.textContent = String(storageEvents)
+
+    if (!keys.length) {
+      var emptyRow = document.createElement('tr')
+      emptyRow.className = 'empty-row'
+      var emptyCell = document.createElement('td')
+      emptyCell.colSpan = 3
+      emptyCell.textContent = '暂无存储数据'
+      emptyRow.appendChild(emptyCell)
+      snapBody.appendChild(emptyRow)
+      return
+    }
+
+    keys.forEach(function (key) {
+      var raw = read(key, '')
+      var row = document.createElement('tr')
+
+      var keyCell = document.createElement('td')
+      keyCell.className = 'mono key'
+      keyCell.textContent = key
+
+      var valueCell = document.createElement('td')
+      valueCell.className = 'mono val'
+      valueCell.textContent = raw.length > 120 ? raw.slice(0, 120) + '…' : raw
+      valueCell.title = raw
+
+      var opCell = document.createElement('td')
+      opCell.className = 'op'
+      var removeButton = document.createElement('button')
+      removeButton.className = 'ghost small'
+      removeButton.textContent = '删除'
+      removeButton.addEventListener('click', function () {
+        try {
+          localStorage.removeItem(key)
+        } catch (err) {
+          /* 存储不可用时忽略 */
+        }
+        syncFromStorage()
+      })
+      opCell.appendChild(removeButton)
+
+      row.appendChild(keyCell)
+      row.appendChild(valueCell)
+      row.appendChild(opCell)
+      snapBody.appendChild(row)
+    })
+  }
+
+  function syncFromStorage() {
+    if (noteEl.value !== read(KEY_NOTE, '')) noteEl.value = read(KEY_NOTE, '')
+    renderCount()
+    renderSnapshot()
+  }
+
+  function commitNote() {
+    if (noteTimer) {
+      clearTimeout(noteTimer)
+      noteTimer = null
+    }
+    if (write(KEY_NOTE, noteEl.value)) {
+      noteState.textContent = '已保存 ' + formatClock(lastWriteAt)
+    }
+    renderSnapshot()
+  }
+
+  document.getElementById('inc').addEventListener('click', function () {
+    write(KEY_COUNT, currentCount() + 1)
+    renderCount()
+    renderSnapshot()
+  })
+
+  document.getElementById('dec').addEventListener('click', function () {
+    write(KEY_COUNT, currentCount() - 1)
+    renderCount()
+    renderSnapshot()
+  })
+
+  document.getElementById('reset').addEventListener('click', function () {
+    write(KEY_COUNT, 0)
+    renderCount()
+    renderSnapshot()
+  })
+
+  noteEl.addEventListener('input', function () {
+    noteState.textContent = '待保存（300ms 后写入）'
+    if (noteTimer) clearTimeout(noteTimer)
+    noteTimer = setTimeout(commitNote, 300)
+  })
+
+  noteEl.addEventListener('blur', commitNote)
+
+  document.getElementById('note-clear').addEventListener('click', function () {
+    noteEl.value = ''
+    if (noteTimer) {
+      clearTimeout(noteTimer)
+      noteTimer = null
+    }
+    try {
+      localStorage.removeItem(KEY_NOTE)
+    } catch (err) {
+      /* 存储不可用时忽略 */
+    }
+    noteState.textContent = '已清空'
+    renderSnapshot()
+  })
+
+  document.getElementById('refresh').addEventListener('click', function () {
+    syncFromStorage()
+  })
+
+  document.getElementById('clear-all').addEventListener('click', function () {
+    if (!window.confirm('清空本页面的全部存储键？')) return
+    try {
+      localStorage.clear()
+    } catch (err) {
+      /* 存储不可用时忽略 */
+    }
+    noteEl.value = ''
+    noteState.textContent = '已清空'
+    syncFromStorage()
+  })
+
+  window.addEventListener('storage', function (event) {
+    storageEvents += 1
+    if (event.key === KEY_NOTE || event.key === null) {
+      if (noteEl.value !== read(KEY_NOTE, '')) noteEl.value = read(KEY_NOTE, '')
+    }
+    if (event.key === KEY_COUNT || event.key === null) renderCount()
+    renderSnapshot()
+  })
+
+  document.getElementById('boom').addEventListener('click', function () {
+    throw new Error('演示异常：来自本地存储演示页')
+  })
+
+  document.getElementById('warn').addEventListener('click', function () {
+    console.warn('演示警告：当前计数器为', currentCount())
+  })
+
+  document.getElementById('reject').addEventListener('click', function () {
+    Promise.reject(new Error('演示拒绝：异步任务失败'))
+  })
+
+  noteEl.value = read(KEY_NOTE, '')
+  renderEnv()
+  renderCount()
+  renderSnapshot()
+})()
+</script>
+</body>
+</html>
