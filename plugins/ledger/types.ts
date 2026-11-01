@@ -1,4 +1,4 @@
-export type Currency = 'CNY' | 'EUR' | 'USD'
+export type Currency = 'CNY' | 'EUR' | 'USD' | 'GBP'
 export type TxnType = 'expense' | 'income' | 'transfer'
 export type AccountType = 'cash' | 'bank' | 'ewallet' | 'credit'
 export type PeriodKind = 'month' | 'week' | 'custom'

@@ -1,0 +1,205 @@
+/* --------------------------------------------------------------------------
+   终端绿 · CRT 单色终端
+   直线、无阴影、等宽字、磷光扫描线，交互靠反色而不是位移
+   -------------------------------------------------------------------------- */
+[data-skin='terminal'] {
+  color-scheme: dark;
+  --void: #030805;
+  --ink-bg: #050c08;
+  --panel: #071009;
+  --panel-2: #0b1710;
+  --panel-3: #102019;
+  --cyan: #7dffb0;
+  --cyan-dim: #3c8f63;
+  --cyan-deep: #1d4a33;
+  --pink: #ffdf6e;
+  --pink-hot: #ffe98f;
+  --pink-deep: #5a4a12;
+  --violet: #4fbe86;
+  --amber: #ffdf6e;
+  --cream: #c8f5da;
+  --muted: #5c8a72;
+  --red: #ff6b5e;
+  --green: #7dffb0;
+  --screen: #040a06;
+  --inset: #020503;
+  --logo-shadow: #0a2a18;
+  --sidebar-bg: #051007;
+  --head-bg: #07130b;
+  --active-bg: rgba(125, 255, 176, 0.12);
+  --row-alt: rgba(125, 255, 176, 0.04);
+  --row-hover: rgba(125, 255, 176, 0.09);
+  --preview-surface: #050d08;
+  --signal-strip: none;
+
+  --inset-ring: #020503;
+  --hairline: #14301f;
+  --tag-bg: rgba(125, 255, 176, 0.08);
+  --tag-border: #1d4a33;
+  --scrim: rgba(0, 0, 0, 0.74);
+  --warn-bg: #141003;
+  --warn-border: #4a3d10;
+  --warn-ink: #ffdf6e;
+  --info-bg: #051710;
+  --info-border: #1d4a33;
+  --info-ink: #7dffb0;
+
+  --bd: 1px;
+  --radius: 0px;
+  --radius-lg: 0px;
+  --motion: 0.08s linear;
+  --motion-slow: 0.14s linear;
+
+  --sidebar-border: var(--cyan-deep);
+  --sidebar-shadow: none;
+  --panel-shadow: inset 0 0 0 1px var(--ink-bg);
+  --pane-accent-shadow: none;
+  --editor-shadow: none;
+  --overlay-shadow: 0 0 0 1px var(--cyan-deep);
+  --shadow: none;
+  --shadow-sm: none;
+
+  --btn-face: #071009;
+  --btn-ink: var(--cyan);
+  --btn-edge: var(--cyan-deep);
+  --btn-light: transparent;
+  --btn-dark: transparent;
+  --btn-bevel: none;
+  --btn-shadow: none;
+  --btn-hover-shadow: 0 0 0 1px var(--cyan);
+  --btn-press-shadow: inset 0 0 0 1px var(--cyan);
+  --btn-hover-lift: none;
+  --btn-press-lift: none;
+  --btn-hover-filter: none;
+  --primary-face: var(--cyan);
+  --primary-ink: #04120a;
+  --primary-edge: var(--cyan);
+  --field-bg: transparent;
+  --field-bg-2: transparent;
+  --placeholder: #356b4e;
+
+  --nav-accent: var(--cyan);
+  --nav-active-bg: rgba(125, 255, 176, 0.1);
+  --nav-hover-bg: rgba(125, 255, 176, 0.05);
+  --nav-hover-border: transparent;
+  --nav-active-bar: inset 2px 0 0 var(--cyan);
+  --list-active-bar: inset 2px 0 0 var(--cyan);
+
+  --rule-bg: linear-gradient(90deg, var(--cyan-dim) 0 30%, transparent 30% 100%);
+  --rule-height: 1px;
+  --plate-rule-bg: linear-gradient(90deg, var(--cyan) 0 30%, var(--cyan-deep) 30% 100%);
+  --plate-rule-height: 1px;
+
+  --focus-outline: 1px solid var(--cyan);
+  --focus-ring: rgba(125, 255, 176, 0.22);
+
+  --brand-glitch: none;
+  --caret-block: block;
+  --list-dot: none;
+  --corner-mark: none;
+
+  --scroll-size: 10px;
+  --scroll-track: #050c08;
+  --scroll-border: #1d4a33;
+  --scroll-thumb: #102019;
+  --scroll-thumb-border: #1d4a33;
+  --scroll-thumb-hover: #1d4a33;
+  --scroll-thumb-hover-border: #7dffb0;
+  --scroll-radius: 0px;
+
+  --font-ui: 'Cascadia Mono', 'Consolas', 'DejaVu Sans Mono', 'NSimSun', monospace;
+  --font-heading: var(--font-ui);
+  --ui-size: 12.5px;
+  --ui-leading: 1.55;
+  --font-smoothing: auto;
+  --text-render: optimizeLegibility;
+  --label-tracking: 0.12em;
+  --heading-tracking: 0.04em;
+  --heading-weight: 400;
+  --heading-size: 22px;
+  --logo-size: 16px;
+  --logo-tracking: 0.08em;
+  --th-tracking: 0.08em;
+  --th-transform: uppercase;
+
+  --logo-text-shadow: 0 0 10px rgba(125, 255, 176, 0.45);
+  --title-text-shadow: 0 0 12px rgba(125, 255, 176, 0.3);
+  --glow-pink: none;
+  --pink-glow-soft: rgba(125, 255, 176, 0.35);
+  --glow-green: 0 0 6px rgba(125, 255, 176, 0.55);
+  --green-glow-text: 0 0 6px rgba(125, 255, 176, 0.55);
+  --selection-ink: #03120a;
+  --frame-bg: #ffffff;
+  --frame-border: var(--cyan-deep);
+  --skeleton-stripe: repeating-linear-gradient(
+    90deg,
+    rgba(60, 143, 99, 0.6) 0 4px,
+    transparent 4px 8px
+  );
+
+  --ambient:
+    repeating-linear-gradient(0deg, rgba(125, 255, 176, 0.035) 0 1px, transparent 1px 3px),
+    radial-gradient(70% 60% at 50% 0%, rgba(30, 120, 70, 0.16), transparent 70%),
+    #030805;
+  --overlay:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 110% 80% at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.62) 100%);
+}
+
+/* 终端绿：按钮一律方角窄排，悬停反白 */
+[data-skin='terminal'] button:not(.ghost):not(.webapp-restore):hover:not(:disabled) {
+  background: var(--cyan);
+  color: #04120a;
+}
+
+/* 终端绿：导航项只在图标块上反白，条目本身保持暗底 */
+[data-skin='terminal'] button.nav-item:hover:not(:disabled):not(.is-dragging) {
+  background: transparent;
+  color: var(--cream);
+}
+
+[data-skin='terminal'] .nav-item {
+  --tile-radius: 0px;
+}
+
+[data-skin='terminal'] .plate-kicker {
+  background: transparent;
+  border-color: var(--cyan-deep);
+  color: var(--cyan);
+}
+
+[data-skin='terminal'] th {
+  background: #07130b;
+  border-bottom: 1px solid var(--cyan-deep);
+  color: var(--cyan-dim);
+}
+
+[data-skin='terminal'] th:hover {
+  color: var(--cyan);
+  background: #0b1710;
+}
+
+[data-skin='terminal'] .plate-rule,
+[data-skin='terminal'] .brand-rule {
+  opacity: 0.55;
+}
+[data-skin='terminal'] .list-item {
+  padding-right: 10px;
+}
+
+[data-skin='terminal'] {
+  --titlebar-bg: #030805;
+  --titlebar-ink: var(--cyan);
+  --titlebar-border: #0f2a1a;
+  --titlebar-hover: #0b1710;
+  --titlebar-close-bg: var(--cyan);
+  --titlebar-close-ink: #04120a;
+}
+
+[data-skin='terminal'] .titlebar-title {
+  color: var(--cyan-dim);
+}
+
+[data-skin='terminal'] .titlebar {
+  border-bottom-width: 1px;
+}

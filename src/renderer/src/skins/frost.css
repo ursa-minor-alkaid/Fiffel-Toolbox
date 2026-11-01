@@ -1,0 +1,283 @@
+/* --------------------------------------------------------------------------
+   冰霜 · 钴蓝冷光界面
+   参考底特律式视觉：浅蓝底 + 细线网格 + 四角准星 + LED 指示
+   直角硬边、发丝分隔线、大写宽字距标签，交互靠线条与冷光而非阴影
+   -------------------------------------------------------------------------- */
+[data-skin='frost'] {
+  color-scheme: light;
+  --void: #d8e8f6;
+  --ink-bg: #c9ddf0;
+  --panel: rgba(255, 255, 255, 0.72);
+  --panel-2: rgba(255, 255, 255, 0.48);
+  --panel-3: rgba(196, 220, 242, 0.55);
+  --cyan: #1467d8;
+  --cyan-dim: #4b7ca8;
+  --cyan-deep: rgba(15, 42, 66, 0.22);
+  --pink: #0d4ba6;
+  --pink-hot: #1467d8;
+  --pink-deep: rgba(13, 75, 166, 0.38);
+  --violet: #3b7fb5;
+  --amber: #3d5b76;
+  --cream: #0c1f30;
+  --muted: #7d98b0;
+  --red: #dd3a2f;
+  --green: #54c7f0;
+  --screen: #eaf3fb;
+  --inset: #c3dbf2;
+  --logo-shadow: transparent;
+  --sidebar-bg: rgba(232, 243, 252, 0.78);
+  --head-bg: rgba(255, 255, 255, 0.62);
+  --active-bg: rgba(20, 103, 216, 0.1);
+  --row-alt: rgba(255, 255, 255, 0.3);
+  --row-hover: rgba(255, 255, 255, 0.72);
+  --preview-surface: rgba(255, 255, 255, 0.6);
+  --signal-strip: none;
+
+  --inset-ring: transparent;
+  --hairline: rgba(15, 42, 66, 0.14);
+  --tag-bg: rgba(20, 103, 216, 0.1);
+  --tag-border: rgba(20, 103, 216, 0.34);
+  --scrim: rgba(10, 23, 37, 0.3);
+  --warn-bg: #fbf3e2;
+  --warn-border: #c9a45c;
+  --warn-ink: #7a5606;
+  --info-bg: rgba(20, 103, 216, 0.08);
+  --info-border: rgba(20, 103, 216, 0.3);
+  --info-ink: #0d4ba6;
+
+  --bd: 1px;
+  --radius: 0px;
+  --radius-lg: 0px;
+  --motion: 0.22s cubic-bezier(0.22, 0.61, 0.25, 1);
+  --motion-slow: 0.34s cubic-bezier(0.22, 0.61, 0.25, 1);
+
+  --sidebar-border: rgba(15, 42, 66, 0.16);
+  --sidebar-shadow: 8px 0 32px rgba(10, 40, 70, 0.06);
+  --panel-shadow: 0 10px 28px rgba(10, 40, 70, 0.07);
+  --pane-accent-shadow: none;
+  --editor-shadow: none;
+  --overlay-shadow: 0 20px 46px rgba(10, 40, 70, 0.16);
+  --shadow: 0 16px 34px rgba(10, 40, 70, 0.12);
+  --shadow-sm: 0 2px 8px rgba(10, 40, 70, 0.07);
+
+  --btn-face: rgba(255, 255, 255, 0.66);
+  --btn-ink: #0c1f30;
+  --btn-edge: rgba(15, 42, 66, 0.28);
+  --btn-light: transparent;
+  --btn-dark: transparent;
+  --btn-bevel: none;
+  --btn-shadow: none;
+  --btn-hover-shadow: none;
+  --btn-press-shadow: none;
+  --btn-hover-lift: translateY(0);
+  --btn-press-lift: translateY(0);
+  --btn-hover-filter: none;
+  --primary-face: #1467d8;
+  --primary-ink: #ffffff;
+  --primary-edge: #1467d8;
+  --field-bg: rgba(255, 255, 255, 0.62);
+  --field-bg-2: rgba(255, 255, 255, 0.5);
+  --placeholder: #9db4c8;
+
+  --nav-accent: #1467d8;
+  --nav-active-bg: rgba(20, 103, 216, 0.1);
+  --nav-hover-bg: rgba(255, 255, 255, 0.6);
+  --nav-hover-border: rgba(20, 103, 216, 0.22);
+  --nav-active-bar: inset 2px 0 0 #1467d8;
+  --list-active-bar: inset 2px 0 0 #1467d8;
+
+  --rule-bg: rgba(15, 42, 66, 0.16);
+  --rule-height: 1px;
+  --plate-rule-bg: linear-gradient(90deg, #1467d8, #54c7f0 55%, transparent);
+  --plate-rule-height: 2px;
+
+  --focus-outline: 1px solid #1467d8;
+  --focus-ring: rgba(84, 199, 240, 0.24);
+
+  --brand-glitch: none;
+  --caret-block: block;
+  --list-dot: block;
+  --dot-radius: 50%;
+  --corner-mark: block;
+
+  --scroll-size: 10px;
+  --scroll-track: transparent;
+  --scroll-border: transparent;
+  --scroll-thumb: rgba(15, 42, 66, 0.22);
+  --scroll-thumb-border: transparent;
+  --scroll-thumb-hover: #1467d8;
+  --scroll-thumb-hover-border: transparent;
+  --scroll-radius: 0px;
+
+  --font-ui: 'Titillium Web', 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  --font-heading: 'Montserrat', 'Titillium Web', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --ui-size: 13px;
+  --ui-leading: 1.65;
+  --font-smoothing: antialiased;
+  --text-render: optimizeLegibility;
+  --label-tracking: 0.16em;
+  --heading-tracking: 0.03em;
+  --heading-weight: 300;
+  --heading-size: 26px;
+  --logo-size: 14px;
+  --logo-tracking: 0.34em;
+  --th-tracking: 0.22em;
+  --th-transform: uppercase;
+
+  --logo-text-shadow: none;
+  --title-text-shadow: none;
+  --glow-pink: 0 0 10px rgba(84, 199, 240, 0.55);
+  --pink-glow-soft: rgba(84, 199, 240, 0.45);
+  --glow-green: 0 0 8px rgba(84, 199, 240, 0.6);
+  --green-glow-text: none;
+  --selection-ink: #ffffff;
+  --frame-bg: #ffffff;
+  --frame-border: rgba(15, 42, 66, 0.18);
+  --skeleton-stripe: repeating-linear-gradient(
+    90deg,
+    rgba(20, 103, 216, 0.3) 0 4px,
+    transparent 4px 8px
+  );
+
+  --ambient:
+    linear-gradient(rgba(23, 74, 120, 0.055) 1px, transparent 1px) 0 0 / 92px 92px,
+    linear-gradient(90deg, rgba(23, 74, 120, 0.055) 1px, transparent 1px) 0 0 / 92px 92px,
+    radial-gradient(90% 70% at 78% 6%, #edf6fd 0%, transparent 60%),
+    radial-gradient(80% 90% at 6% 94%, #edf6fd 0%, transparent 55%),
+    radial-gradient(120% 120% at 50% 0%, #c3dbf2 0%, transparent 70%),
+    #d8e8f6;
+  --overlay: radial-gradient(130% 100% at 50% 0%, transparent 45%, rgba(10, 40, 70, 0.1) 100%);
+
+  --titlebar-bg: #e8f3fc;
+  --titlebar-ink: #0d4ba6;
+  --titlebar-border: rgba(15, 42, 66, 0.16);
+  --titlebar-hover: rgba(255, 255, 255, 0.78);
+  --titlebar-close-bg: #dd3a2f;
+  --titlebar-close-ink: #ffffff;
+  --titlebar-glyph-weight: 1px;
+  --titlebar-glyph-radius: 0;
+}
+
+/* 冰霜：选中项用钴蓝左侧竖条，与基类的 tone 竖条合并为一条 */
+[data-skin='frost'] .nav-item.active,
+[data-skin='frost'] .list-item.active,
+[data-skin='frost'] tbody tr.selected {
+  box-shadow: none;
+}
+
+[data-skin='frost'] .nav-item.active {
+  --nav-tone: #1467d8;
+  background: rgba(20, 103, 216, 0.08);
+  border-color: rgba(20, 103, 216, 0.32);
+}
+
+[data-skin='frost'] .nav-item.active .nav-label,
+[data-skin='frost'] .list-item.active .list-item-title {
+  color: #0d4ba6;
+  font-weight: 600;
+}
+
+[data-skin='frost'] .plate-kicker {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(15, 42, 66, 0.28);
+  color: #3d5b76;
+  letter-spacing: 0.26em;
+}
+
+[data-skin='frost'] .plate-version {
+  border-color: rgba(15, 42, 66, 0.22);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+[data-skin='frost'] .plate-version::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #54c7f0;
+  box-shadow: 0 0 8px rgba(84, 199, 240, 0.7);
+}
+
+[data-skin='frost'] .skin-swatch {
+  border-radius: 0;
+}
+
+/* 冰霜：按钮直角硬边，悬停填充钴蓝 */
+[data-skin='frost'] button:not(.ghost):not(.webapp-restore):hover:not(:disabled) {
+  background: #1467d8;
+  border-color: #1467d8;
+  color: #ffffff;
+}
+
+[data-skin='frost'] button.primary:hover:not(:disabled) {
+  background: #0d4ba6;
+  border-color: #0d4ba6;
+}
+
+[data-skin='frost'] button.ghost:hover:not(:disabled) {
+  color: #0d4ba6;
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(20, 103, 216, 0.24);
+}
+
+/* 冰霜：表头做成细线标签条 */
+[data-skin='frost'] th {
+  background: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid rgba(15, 42, 66, 0.2);
+  color: #7d98b0;
+}
+
+[data-skin='frost'] th:hover {
+  color: #1467d8;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+/* 冰霜：导航项使用直角与玻璃底，竖条由基类 tone 提供 */
+[data-skin='frost'] .nav-item {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 0;
+  --tile-radius: 2px;
+}
+
+[data-skin='frost'] .nav-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(15, 42, 66, 0.14);
+}
+
+/* 冰霜：面板使用玻璃底与细线，不带阴影厚度 */
+[data-skin='frost'] .list-pane,
+[data-skin='frost'] .editor,
+[data-skin='frost'] .webapp-pane,
+[data-skin='frost'] .app-rail-sheet {
+  background: rgba(255, 255, 255, 0.66);
+  -webkit-backdrop-filter: blur(10px) saturate(1.08);
+  backdrop-filter: blur(10px) saturate(1.08);
+}
+
+/* 冰霜：卡片浮起靠位移与描边变色 */
+[data-skin='frost'] .list-item {
+  border-bottom: 1px solid rgba(15, 42, 66, 0.1);
+}
+
+[data-skin='frost'] .list-item:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+[data-skin='frost'] .list-item {
+  padding-right: 10px;
+}
+
+[data-skin='frost'] .titlebar {
+  border-bottom-width: 1px;
+  -webkit-backdrop-filter: blur(14px) saturate(1.12);
+  backdrop-filter: blur(14px) saturate(1.12);
+}
+
+[data-skin='frost'] .titlebar-title {
+  color: #0d4ba6;
+  font-family: var(--font-heading);
+}
+
+[data-skin='frost'] .titlebar-glyph.close,
+[data-skin='frost'] .titlebar-glyph.minimize {
+  border-color: #1467d8;
+}

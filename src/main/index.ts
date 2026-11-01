@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { registerPlugin, attachIpc, attachProtocols, registerSchemePrivileges } from './plugin-host'
@@ -7,9 +7,16 @@ import type { PluginMainModule } from '../shared/types'
 const WINDOW_BG = '#f1f1ee'
 const APP_NAME = 'Fiffel'
 const ICON_FILE = 'fiffel.ico'
+const TRAY_ICON_FILE = 'icon.png'
 
 /** 改名前的用户数据目录，用于一次性迁移 */
 const LEGACY_USER_DATA = 'toolbox'
+
+/** 主窗口与托盘常驻引用，避免被垃圾回收 */
+let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+/** 只有从托盘菜单退出时才真正关闭窗口 */
+let quitting = false
 
 app.setName(APP_NAME)
 
@@ -29,6 +36,16 @@ async function migrateUserData(): Promise<void> {
     return
   } catch {
     /* 尚未迁移，继续 */
+  }
+
+  await fs.mkdir(target, { recursive: true })
+
+  // safeStorage 的主密钥存在 Local State，必须一并迁移，否则旧密文无法解密
+  try {
+    await fs.access(path.join(legacy, 'Local State'))
+    await fs.copyFile(path.join(legacy, 'Local State'), path.join(target, 'Local State'))
+  } catch {
+    /* 旧目录没有 Local State，跳过 */
   }
 
   const items = ['data', 'webapp-data', 'Local Storage']
@@ -53,7 +70,6 @@ async function migrateUserData(): Promise<void> {
   }
 
   try {
-    await fs.mkdir(target, { recursive: true })
     await fs.writeFile(marker, copied ? 'copied' : 'empty', 'utf-8')
   } catch {
     /* 标记写入失败不影响运行 */
@@ -102,6 +118,13 @@ function createWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
+  // 关闭按钮只收进托盘，退出走托盘菜单
+  win.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    win.hide()
+  })
+
   const pushState = (): void => {
     win.webContents.send('fiffel:window-state-changed', { maximized: win.isMaximized() })
   }
@@ -119,7 +142,50 @@ function createWindow(): BrowserWindow {
     void win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
+  mainWindow = win
   return win
+}
+
+/** 托盘图标优先用 ico 取清晰的多尺寸图，缺失时退回 png */
+function resolveTrayIcon(): Electron.NativeImage {
+  for (const name of [ICON_FILE, TRAY_ICON_FILE]) {
+    const image = nativeImage.createFromPath(path.join(app.getAppPath(), name))
+    if (!image.isEmpty()) return image
+  }
+  return nativeImage.createEmpty()
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** 彻底退出：关闭窗口、销毁托盘，插件占用的进程随主进程一起结束 */
+function quitApp(): void {
+  quitting = true
+  tray?.destroy()
+  tray = null
+  app.quit()
+}
+
+function createTray(): void {
+  if (tray) return
+  tray = new Tray(resolveTrayIcon())
+  tray.setToolTip(`${APP_NAME} · 左键显示，右键退出`)
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: '显示主界面', click: () => showMainWindow() },
+      { type: 'separator' },
+      { label: `退出 ${APP_NAME}`, click: () => quitApp() }
+    ])
+  )
+  tray.on('click', () => showMainWindow())
+  tray.on('double-click', () => showMainWindow())
 }
 
 /** 自绘标题栏：窗口控制与底色同步，使皮肤可以完整覆盖整个窗口 */
@@ -155,25 +221,32 @@ const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) {
   app.quit()
 } else {
+  // 迁移必须在 Chromium 初始化加密密钥之前开始，否则 Local State 的覆盖不会生效
+  const migration = migrateUserData()
+
   app.on('second-instance', () => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.focus()
+    showMainWindow()
   })
 
   app.whenReady().then(async () => {
-    await migrateUserData()
+    await migration
     attachProtocols()
     attachIpc()
     attachWindowControls()
     createWindow()
+    createTray()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else showMainWindow()
     })
   })
 }
+
+// 系统层面的退出（关机、任务管理器、Cmd+Q）与托盘退出同等对待
+app.on('before-quit', () => {
+  quitting = true
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

@@ -10,11 +10,11 @@
     <title>Fiffel</title>
     <script>
       try {
-        var known = ['neon', 'terminal', 'frost', 'paper', 'whirl']
+        var known = ['terminal', 'cosmos', 'frost', 'paper', 'whirl', 'pasture']
         var stored = localStorage.getItem('fiffel:skin') || localStorage.getItem('toolbox:skin')
         if (known.indexOf(stored) < 0) {
           var legacy = localStorage.getItem('toolbox:theme')
-          stored = legacy === 'light' ? 'paper' : legacy === 'dark' ? 'neon' : 'whirl'
+          stored = legacy === 'light' ? 'paper' : legacy === 'dark' ? 'terminal' : 'whirl'
         }
         document.documentElement.dataset.skin = stored
       } catch (e) {}
@@ -28,6 +28,10 @@
       html[data-skin='terminal'] body {
         background: #030805;
       }
+      html[data-skin='cosmos'],
+      html[data-skin='cosmos'] body {
+        background: #06070c;
+      }
       html[data-skin='frost'],
       html[data-skin='frost'] body {
         background: #d8e8f6;
@@ -39,6 +43,10 @@
       html[data-skin='whirl'],
       html[data-skin='whirl'] body {
         background: #f1f1ee;
+      }
+      html[data-skin='pasture'],
+      html[data-skin='pasture'] body {
+        background: #efe7d3;
       }
     </style>
   </head>

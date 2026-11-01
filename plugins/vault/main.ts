@@ -115,11 +115,13 @@ const mod: PluginMainModule = {
       return { ...vault, encryptionAvailable: ctx.secrets.available() }
     },
 
-    async revealApiKey(args, ctx): Promise<string> {
+    async revealApiKey(args, ctx): Promise<{ ok: boolean; value: string }> {
       const { id } = (args ?? {}) as { id: string }
       const vault = await readVault(ctx)
       const entry = vault.apis.find((item) => item.id === id)
-      return entry ? ctx.secrets.decrypt(entry.keyCipher) : ''
+      if (!entry || !entry.keyCipher) return { ok: false, value: '' }
+      const value = ctx.secrets.decrypt(entry.keyCipher)
+      return { ok: Boolean(value), value }
     },
 
     async savePrompt(args, ctx): Promise<VaultData> {

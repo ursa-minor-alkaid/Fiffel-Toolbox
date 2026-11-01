@@ -83,20 +83,23 @@ interface RateResponse {
   rates: Record<string, number>
 }
 
+/** 现汇按央行中间价的 102% 折算 */
+const RATE_UPLIFT = 1.02
+
 async function fetchCnyRates(): Promise<{ date: string; map: Partial<Record<Currency, number>> }> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
   try {
-    const response = await fetch('https://api.frankfurter.app/latest?from=CNY&to=EUR,USD', {
+    const response = await fetch('https://api.frankfurter.app/latest?from=CNY&to=EUR,USD,GBP', {
       signal: controller.signal
     })
     if (!response.ok) throw new Error(`汇率接口返回 ${response.status}`)
     const payload = (await response.json()) as RateResponse
     const map: Partial<Record<Currency, number>> = { CNY: 1 }
-    for (const currency of ['EUR', 'USD'] as Currency[]) {
+    for (const currency of ['EUR', 'USD', 'GBP'] as Currency[]) {
       const quoted = payload.rates?.[currency]
       if (typeof quoted === 'number' && quoted > 0) {
-        map[currency] = Number((1 / quoted).toFixed(6))
+        map[currency] = Number(((1 / quoted) * RATE_UPLIFT).toFixed(6))
       }
     }
     return { date: payload.date ?? today(), map }
@@ -628,7 +631,7 @@ const mod: PluginMainModule = {
     id: 'ledger',
     name: '记账',
     icon: 'wallet',
-    description: '三币种记账，支持按月与按周汇总、账户余额与多格式导出',
+    description: '四币种记账，支持按月与按周汇总、账户余额与多格式导出',
     version: '0.1.0'
   },
   handlers

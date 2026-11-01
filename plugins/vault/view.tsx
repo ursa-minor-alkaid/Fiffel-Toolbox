@@ -50,6 +50,8 @@ const emptyPrompt = (): PromptEntry => ({
 })
 
 const MODEL_SLOTS = 5
+/** 已保存密钥的占位遮罩，仅作展示，不代表真实长度 */
+const KEY_MASK = '••••••••••••'
 
 export default function VaultView(): JSX.Element {
   const { invoke } = usePlugin('vault')
@@ -59,6 +61,8 @@ export default function VaultView(): JSX.Element {
   const [promptDraft, setPromptDraft] = useState<PromptEntry>(emptyPrompt())
   const [plainKey, setPlainKey] = useState('')
   const [showKey, setShowKey] = useState(false)
+  /** plainKey 是否来自解密回填，用户一输入就不再算回填 */
+  const [keyRevealed, setKeyRevealed] = useState(false)
   const [status, setStatus] = useState('')
   const [keyword, setKeyword] = useState('')
   const [includeSecrets, setIncludeSecrets] = useState(false)
@@ -86,6 +90,7 @@ export default function VaultView(): JSX.Element {
     setApiDraft(entry)
     setPlainKey('')
     setShowKey(false)
+    setKeyRevealed(false)
   }
 
   const pickPrompt = (entry: PromptEntry): void => {
@@ -104,6 +109,7 @@ export default function VaultView(): JSX.Element {
     apply(next)
     setPlainKey('')
     setShowKey(false)
+    setKeyRevealed(false)
     const saved = apiDraft.id
       ? next.apis.find((item) => item.id === apiDraft.id)
       : next.apis.find((item) => item.name === apiDraft.name)
@@ -117,6 +123,7 @@ export default function VaultView(): JSX.Element {
     setApiDraft(emptyApi())
     setPlainKey('')
     setShowKey(false)
+    setKeyRevealed(false)
     setStatus('已删除')
   }
 
@@ -136,10 +143,21 @@ export default function VaultView(): JSX.Element {
   const toggleKeyVisible = async (): Promise<void> => {
     if (showKey) {
       setShowKey(false)
+      // 明文由存档解密而来且未被编辑，隐藏时收回，恢复统一的点遮罩
+      if (keyRevealed) {
+        setPlainKey('')
+        setKeyRevealed(false)
+      }
       return
     }
     if (!plainKey && apiDraft.id) {
-      setPlainKey(await invoke<string>('revealApiKey', { id: apiDraft.id }))
+      const result = await invoke<{ ok: boolean; value: string }>('revealApiKey', { id: apiDraft.id })
+      if (!result.ok) {
+        setStatus('保存的密钥无法解密，请重新输入后保存')
+        return
+      }
+      setPlainKey(result.value)
+      setKeyRevealed(true)
     }
     setShowKey(true)
   }
@@ -147,7 +165,12 @@ export default function VaultView(): JSX.Element {
   const copyApiKey = async (): Promise<void> => {
     let value = plainKey
     if (!value && apiDraft.id) {
-      value = await invoke<string>('revealApiKey', { id: apiDraft.id })
+      const result = await invoke<{ ok: boolean; value: string }>('revealApiKey', { id: apiDraft.id })
+      if (!result.ok) {
+        setStatus('保存的密钥无法解密，请重新输入后保存')
+        return
+      }
+      value = result.value
     }
     await copyText(value, 'API Key')
   }
@@ -156,6 +179,9 @@ export default function VaultView(): JSX.Element {
     { length: MODEL_SLOTS },
     (_, index) => apiDraft.models[index] ?? ''
   )
+
+  // 已保存且输入框为空时，用固定长度的点作占位，点击不改变显示内容
+  const keyPlaceholder = apiDraft.keyCipher ? KEY_MASK : 'sk-...'
 
   const setModelAt = (index: number, value: string): void => {
     const next = modelSlots.slice()
@@ -227,7 +253,7 @@ export default function VaultView(): JSX.Element {
         <div className="panes">
           <div className="list-pane">
             <div className="list-pane-head">
-              <button className="ghost" onClick={() => { setApiDraft(emptyApi()); setPlainKey(''); setShowKey(false) }}>
+              <button className="ghost" onClick={() => { setApiDraft(emptyApi()); setPlainKey(''); setShowKey(false); setKeyRevealed(false) }}>
                 新建
               </button>
             </div>
@@ -298,12 +324,15 @@ export default function VaultView(): JSX.Element {
                 </div>
               </div>
               <div className="field full">
-                <label>API Key（保存后加密，默认隐藏）</label>
+                <label>API Key（保存后加密，留空表示不修改）</label>
                 <div className="input-actions">
                   <input
                     value={plainKey}
-                    onChange={(e) => setPlainKey(e.target.value)}
-                    placeholder={apiDraft.keyCipher ? '已保存，留空表示不修改' : 'sk-...'}
+                    onChange={(e) => {
+                      setPlainKey(e.target.value)
+                      setKeyRevealed(false)
+                    }}
+                    placeholder={keyPlaceholder}
                     type={showKey ? 'text' : 'password'}
                     autoComplete="off"
                     spellCheck={false}

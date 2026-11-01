@@ -102,6 +102,7 @@ export default function LedgerView(): JSX.Element {
   const [expandedAccount, setExpandedAccount] = useState('')
   const [rateEUR, setRateEUR] = useState('')
   const [rateUSD, setRateUSD] = useState('')
+  const [rateGBP, setRateGBP] = useState('')
 
   const flash = (text: string, isError = false): void => {
     setStatus(text)
@@ -127,7 +128,8 @@ export default function LedgerView(): JSX.Element {
         flash('已从备份恢复，请核对最近一笔改动', true)
       }
       const latest = latestRates(loaded.meta)
-      if (!latest || latest.date !== today()) {
+      const complete = CURRENCIES.every((item) => item === 'CNY' || Boolean(latest?.map[item]))
+      if (!latest || latest.date !== today() || !complete) {
         void invoke<{ ok: boolean; error?: string }>('refreshRates').then((result) => {
           if (!result.ok) setRateWarning(result.error ?? '汇率获取失败，可在设置页手填')
           else setRateWarning('')
@@ -255,6 +257,7 @@ export default function LedgerView(): JSX.Element {
     if (!point) return
     setRateEUR(point.map.EUR ? point.map.EUR.toFixed(4) : '')
     setRateUSD(point.map.USD ? point.map.USD.toFixed(4) : '')
+    setRateGBP(point.map.GBP ? point.map.GBP.toFixed(4) : '')
   }, [meta?.rates])
 
   useEffect(() => {
@@ -414,12 +417,14 @@ export default function LedgerView(): JSX.Element {
     try {
       const eur = parseAmountToCents(rateEUR)
       const usd = parseAmountToCents(rateUSD)
-      if (!eur || eur <= 0 || !usd || usd <= 0) {
+      const gbp = parseAmountToCents(rateGBP)
+      if (!eur || eur <= 0 || !usd || usd <= 0 || !gbp || gbp <= 0) {
         flash('汇率需要填写大于 0 的数值', true)
         return
       }
       await invoke('saveRate', { currency: 'EUR', value: eur / 100 })
       await invoke('saveRate', { currency: 'USD', value: usd / 100 })
+      await invoke('saveRate', { currency: 'GBP', value: gbp / 100 })
       const reloaded = await invoke<LedgerData>('load')
       setData(reloaded)
       setRateWarning('')
@@ -1201,6 +1206,11 @@ export default function LedgerView(): JSX.Element {
               <span className="dim">CNY</span>
             </div>
             <div className="ledger-setting-row">
+              <span className="ledger-label">1 GBP</span>
+              <input value={rateGBP} onChange={(event) => setRateGBP(event.target.value)} />
+              <span className="dim">CNY</span>
+            </div>
+            <div className="ledger-setting-row">
               <button className="primary" onClick={() => void saveRates()}>
                 保存汇率
               </button>
@@ -1219,6 +1229,9 @@ export default function LedgerView(): JSX.Element {
                 获取最新汇率
               </button>
               <span className="dim">{ratePoint ? `最新 ${ratePoint.date}` : '尚未获取汇率'}</span>
+            </div>
+            <div className="ledger-setting-note">
+              获取最新汇率时，以央行中间价乘 1.02 计入；手填的数值按原值使用。
             </div>
           </section>
 

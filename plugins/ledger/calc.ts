@@ -9,12 +9,13 @@ import type {
   TxnFilter
 } from './types'
 
-export const CURRENCIES: Currency[] = ['CNY', 'EUR', 'USD']
+export const CURRENCIES: Currency[] = ['CNY', 'EUR', 'USD', 'GBP']
 
 export const CURRENCY_META: Record<Currency, { symbol: string; name: string }> = {
   CNY: { symbol: '¥', name: '人民币' },
   EUR: { symbol: '€', name: '欧元' },
-  USD: { symbol: '$', name: '美元' }
+  USD: { symbol: '$', name: '美元' },
+  GBP: { symbol: '£', name: '英镑' }
 }
 
 export const ACCOUNT_TYPES: Record<Account['type'], string> = {
@@ -132,7 +133,7 @@ export function formatAmount(cents: number): string {
 
 /** 解析金额输入，支持四则运算，返回分 */
 export function parseAmountToCents(raw: string): number | null {
-  const text = raw.trim().replace(/[¥€$,，\s]/g, '')
+  const text = raw.trim().replace(/[¥€$£,，\s]/g, '')
   if (!text) return null
   if (!/^[\d.+\-*/()\s.]+$/.test(text)) return null
   try {

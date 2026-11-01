@@ -1,0 +1,201 @@
+/* --------------------------------------------------------------------------
+   纸本 · 印刷读物
+   衬线字、墨线、无投影、双线分隔，交互靠下划线而非浮起
+   -------------------------------------------------------------------------- */
+[data-skin='paper'] {
+  color-scheme: light;
+  --void: #f4efe3;
+  --ink-bg: #ece5d5;
+  --panel: #fdfaf2;
+  --panel-2: #f8f3e7;
+  --panel-3: #ede6d5;
+  --cyan: #2f4858;
+  --cyan-dim: #6d7f8d;
+  --cyan-deep: #cfd6d3;
+  --pink: #a33f3f;
+  --pink-hot: #c25a4a;
+  --pink-deep: #e6cfc9;
+  --violet: #6b6250;
+  --amber: #8a6108;
+  --cream: #241f1a;
+  --muted: #6b6250;
+  --red: #a33f3f;
+  --green: #3f6b4a;
+  --screen: #f6f1e4;
+  --inset: #e9e1ce;
+  --logo-shadow: #d8cdb6;
+  --sidebar-bg: #f8f3e6;
+  --head-bg: #f8f3e6;
+  --active-bg: #f0e4dc;
+  --row-alt: #faf6ec;
+  --row-hover: #f4eee0;
+  --preview-surface: #fdfaf2;
+  --signal-strip: none;
+
+  --inset-ring: transparent;
+  --hairline: #dfd6c2;
+  --tag-bg: #f6e2dc;
+  --tag-border: #d8ada4;
+  --scrim: rgba(36, 31, 26, 0.34);
+  --warn-bg: #fbf1d8;
+  --warn-border: #cbb06a;
+  --warn-ink: #7a5606;
+  --info-bg: #eaf1f2;
+  --info-border: #c3d3d6;
+  --info-ink: #2f5f6b;
+
+  --bd: 1px;
+  --radius: 0px;
+  --radius-lg: 0px;
+  --motion: 0.1s linear;
+  --motion-slow: 0.14s linear;
+
+  --sidebar-border: #241f1a;
+  --sidebar-shadow: none;
+  --panel-shadow: none;
+  --pane-accent-shadow: none;
+  --editor-shadow: none;
+  --overlay-shadow: none;
+  --shadow: none;
+  --shadow-sm: none;
+
+  --btn-face: transparent;
+  --btn-ink: #241f1a;
+  --btn-edge: #241f1a;
+  --btn-light: transparent;
+  --btn-dark: transparent;
+  --btn-bevel: none;
+  --btn-shadow: none;
+  --btn-hover-shadow: none;
+  --btn-press-shadow: inset 0 0 0 1px #241f1a;
+  --btn-hover-lift: none;
+  --btn-press-lift: none;
+  --btn-hover-filter: none;
+  --primary-face: #241f1a;
+  --primary-ink: #fdfaf2;
+  --primary-edge: #241f1a;
+  --field-bg: transparent;
+  --field-bg-2: transparent;
+  --placeholder: #a09580;
+
+  --nav-accent: var(--pink);
+  --nav-active-bg: transparent;
+  --nav-hover-bg: #f4eee0;
+  --nav-hover-border: transparent;
+  --nav-active-bar: inset 2px 0 0 var(--pink);
+  --list-active-bar: inset 2px 0 0 var(--pink);
+
+  --rule-bg: repeating-linear-gradient(0deg, #241f1a 0 1px, transparent 1px 3px);
+  --rule-height: 3px;
+  --plate-rule-bg: repeating-linear-gradient(0deg, #241f1a 0 1px, transparent 1px 4px);
+  --plate-rule-height: 4px;
+
+  --focus-outline: 1px dashed #a33f3f;
+  --focus-ring: rgba(163, 63, 63, 0.14);
+
+  --brand-glitch: none;
+  --caret-block: none;
+  --list-dot: none;
+  --corner-mark: none;
+
+  --scroll-size: 10px;
+  --scroll-track: transparent;
+  --scroll-border: transparent;
+  --scroll-thumb: #dcd2bc;
+  --scroll-thumb-border: transparent;
+  --scroll-thumb-hover: #c9bda3;
+  --scroll-thumb-hover-border: transparent;
+  --scroll-radius: 0px;
+
+  --font-ui: 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC', 'SimSun', Georgia,
+    serif;
+  --font-heading: var(--font-ui);
+  --ui-size: 13.5px;
+  --ui-leading: 1.75;
+  --font-smoothing: antialiased;
+  --text-render: optimizeLegibility;
+  --label-tracking: 0.1em;
+  --heading-tracking: 0.02em;
+  --heading-weight: 700;
+  --heading-size: 26px;
+  --logo-size: 19px;
+  --logo-tracking: 0.1em;
+  --th-tracking: 0.08em;
+  --th-transform: none;
+
+  --logo-text-shadow: none;
+  --title-text-shadow: none;
+  --glow-pink: none;
+  --pink-glow-soft: transparent;
+  --glow-green: none;
+  --green-glow-text: none;
+  --selection-ink: #fdfaf2;
+  --frame-bg: #ffffff;
+  --frame-border: #b9ad96;
+  --skeleton-stripe: repeating-linear-gradient(
+    90deg,
+    rgba(47, 72, 88, 0.3) 0 4px,
+    transparent 4px 8px
+  );
+
+  --ambient:
+    repeating-linear-gradient(45deg, rgba(120, 100, 70, 0.03) 0 1px, transparent 1px 4px),
+    radial-gradient(70% 50% at 50% 0%, rgba(163, 63, 63, 0.03), transparent 70%),
+    #f4efe3;
+  --overlay: none;
+}
+
+/* 纸本：按钮悬停改为反白，表头用双线压底 */
+[data-skin='paper'] button:not(.ghost):not(.webapp-restore):hover:not(:disabled) {
+  background: #241f1a;
+  color: #fdfaf2;
+}
+
+/* 纸本：导航项保持纸面，不跟随按钮反白 */
+[data-skin='paper'] button.nav-item:hover:not(:disabled):not(.is-dragging) {
+  background: #f0e4dc;
+  border-color: transparent;
+  color: #241f1a;
+}
+
+[data-skin='paper'] .nav-item {
+  --tile-radius: 0px;
+}
+
+[data-skin='paper'] th {
+  color: #241f1a;
+  border-bottom: 3px double #241f1a;
+  background: #f8f3e6;
+}
+
+[data-skin='paper'] .plate-kicker,
+[data-skin='paper'] .tag {
+  letter-spacing: 0.08em;
+}
+
+/* 纸本：区块之间用细墨线代替留白压力 */
+[data-skin='paper'] .list-item {
+  border-bottom-style: solid;
+  border-bottom-color: #e2d9c6;
+}
+[data-skin='paper'] .list-item {
+  padding-right: 10px;
+}
+
+[data-skin='paper'] {
+  --titlebar-bg: #f8f3e6;
+  --titlebar-ink: #2f4858;
+  --titlebar-border: #d8cfbb;
+  --titlebar-hover: #efe7d6;
+  --titlebar-close-bg: #a33f3f;
+  --titlebar-close-ink: #fdfaf2;
+}
+
+[data-skin='paper'] .titlebar {
+  border-bottom-width: 1px;
+}
+
+[data-skin='paper'] .titlebar-title {
+  font-family: var(--font-heading);
+  letter-spacing: 0.3em;
+}

@@ -1,0 +1,645 @@
+/* 牧场皮肤侧栏不显示滚动条，保留滚动能力 */
+[data-skin='pasture'] .nav {
+  scrollbar-width: none;
+}
+
+[data-skin='pasture'] .nav::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   牧场 · 像素田园档案
+   取自牧场插画的暮色天空、松林深绿与草甸青
+   像素字 + 圆角纸卡 + 硬投影 + 轻微倾斜 + 闪烁星星，暖米蒙版压住插画
+   -------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: 'Fusion Pixel 12px';
+  src: url('../assets/fusion-pixel-12px.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+[data-skin='pasture'] {
+  color-scheme: light;
+  --void: #f3ecdc;
+  --ink-bg: #ede5d2;
+  --panel: rgba(254, 252, 244, 0.92);
+  --panel-2: rgba(250, 246, 235, 0.94);
+  --panel-3: #f0e9d7;
+  --cyan: #2f6f7e;
+  --cyan-dim: #5d8f99;
+  --cyan-deep: #d9d0b6;
+  --pink: #c97c8c;
+  --pink-hot: #a95f70;
+  --pink-deep: #e9c8ca;
+  --violet: #9d8bb5;
+  --amber: #9a7628;
+  --cream: #2b3730;
+  --muted: #75776a;
+  --red: #b0463f;
+  --green: #6f9a4e;
+  --screen: #f7f1e1;
+  --inset: #e9e1cc;
+  --logo-shadow: #dcd1b4;
+  --sidebar-bg: rgba(251, 247, 236, 0.92);
+  --head-bg: #e3ede4;
+  --active-bg: #f7ebdd;
+  --row-alt: rgba(247, 242, 230, 0.85);
+  --row-hover: #fbf3e3;
+  --preview-surface: rgba(253, 249, 237, 0.94);
+  --signal-strip: none;
+
+  --inset-ring: transparent;
+  --hairline: #e7dfc8;
+  --tag-bg: #f4e8d6;
+  --tag-border: #dcc5a5;
+  --scrim: rgba(43, 55, 48, 0.34);
+  --warn-bg: #fcf3da;
+  --warn-border: #cfb271;
+  --warn-ink: #7c5a16;
+  --info-bg: #e4f0ee;
+  --info-border: #a9cbc7;
+  --info-ink: #1f5e68;
+
+  --bd: 1px;
+  --radius: 0px;
+  --radius-lg: 14px;
+  --nav-radius: 14px;
+  --tile-radius: 11px;
+  --motion: 0.12s steps(2, end);
+  --motion-slow: 0.18s steps(3, end);
+
+  --sidebar-border: #dcd3b8;
+  --sidebar-shadow: none;
+  --panel-shadow: 3px 3px 0 rgba(122, 105, 60, 0.14);
+  --pane-accent-shadow: inset 3px 0 0 #c3d48c;
+  --editor-shadow: inset 0 0 0 1px rgba(122, 105, 60, 0.08);
+  --overlay-shadow: 6px 6px 0 rgba(43, 55, 48, 0.16);
+  --shadow: 4px 4px 0 rgba(122, 105, 60, 0.14);
+  --shadow-sm: 2px 2px 0 rgba(122, 105, 60, 0.12);
+
+  --btn-face: #fbf5e2;
+  --btn-ink: #2b3730;
+  --btn-edge: #a98f57;
+  --btn-light: #fffdf3;
+  --btn-dark: #ddcba6;
+  --btn-bevel: inset 1px 1px 0 var(--btn-light), inset -1px -1px 0 var(--btn-dark);
+  --btn-shadow: var(--btn-bevel), 3px 3px 0 #d8bf85;
+  --btn-hover-shadow: var(--btn-bevel), 4px 4px 0 #cfb478;
+  --btn-press-shadow: inset 2px 2px 0 var(--btn-dark), inset -1px -1px 0 var(--btn-light);
+  --btn-hover-lift: translate(-1px, -1px);
+  --btn-press-lift: translate(1px, 1px);
+  --btn-hover-filter: none;
+  --primary-face: #2f6f7e;
+  --primary-ink: #fdf7e6;
+  --primary-edge: #17424b;
+  --field-bg: #fefcf5;
+  --field-bg-2: #fbf7ec;
+  --placeholder: #a9ab9b;
+
+  --nav-accent: #c97c8c;
+  --nav-active-bg: #fdf8ec;
+  --nav-hover-bg: #f2f6ea;
+  --nav-hover-border: transparent;
+  --nav-active-bar: inset 4px 0 0 #9dbb63, 3px 3px 0 #eddcb8;
+  --list-active-bar: inset 4px 0 0 #9dbb63;
+
+  --rule-bg: linear-gradient(90deg, #3f5f44 0 42px, #dcd3b8 42px 100%);
+  --rule-height: 1px;
+  --plate-rule-bg: linear-gradient(
+    90deg,
+    #d998a6 0 34%,
+    #b9a3c9 34% 62%,
+    #8fae66 62% 100%
+  );
+  --plate-rule-height: 3px;
+
+  --focus-outline: 2px solid #5e8c45;
+  --focus-ring: rgba(46, 115, 134, 0.22);
+
+  --brand-glitch: none;
+  --caret-block: block;
+  --list-dot: none;
+  --dot-radius: 0px;
+  --corner-mark: none;
+
+  --scroll-size: 3px;
+  --scroll-track: transparent;
+  --scroll-border: transparent;
+  --scroll-thumb: #cdbd97;
+  --scroll-thumb-border: transparent;
+  --scroll-thumb-hover: #4a98a6;
+  --scroll-thumb-hover-border: transparent;
+  --scroll-radius: 0px;
+
+  --font-ui: 'Fusion Pixel 12px', 'Fusion Pixel 12px Proportional SC', 'Zpix', 'NSimSun',
+    'SimSun', 'Microsoft YaHei', monospace;
+  --font-heading: var(--font-ui);
+  font-synthesis: none;
+  --ui-size: 12px;
+  --ui-leading: 1.72;
+  --font-smoothing: none;
+  --text-render: optimizeSpeed;
+  --label-tracking: 0.18em;
+  --heading-tracking: 0.14em;
+  --heading-weight: 400;
+  --heading-size: 24px;
+  --logo-size: 24px;
+  --logo-tracking: 0.16em;
+  --th-tracking: 0.14em;
+  --th-transform: none;
+
+  --logo-text-shadow: none;
+  --title-text-shadow: none;
+  --glow-pink: none;
+  --pink-glow-soft: transparent;
+  --glow-green: none;
+  --green-glow-text: none;
+  --selection-ink: #fff8e9;
+  --frame-bg: #fffdf6;
+  --frame-border: #cbbfa0;
+  --skeleton-stripe: repeating-linear-gradient(
+    90deg,
+    rgba(94, 140, 69, 0.45) 0 4px,
+    transparent 4px 8px
+  );
+
+  /* 插画与蒙版挂在 .shell 上，其余皮肤仍走 body 环境层 */
+  --ambient: none;
+  --overlay: none;
+
+  --titlebar-bg: rgba(251, 247, 237, 0.94);
+  --titlebar-ink: #2f6f7e;
+  --titlebar-border: #d8cdb2;
+  --titlebar-hover: #f1efdf;
+  --titlebar-close-bg: #ce7a85;
+  --titlebar-close-ink: #fff8ec;
+  --titlebar-glyph-weight: 1px;
+  --titlebar-glyph-radius: 2px;
+}
+
+/* 插画只在牧场皮肤下铺进整窗，其余皮肤不受影响 */
+[data-skin='pasture'] .shell {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(180deg, #c9c1d8 0%, #e8e0d4 46%, #cdd09e 84%, #a8b07d 100%);
+}
+
+/* 整幅等比缩放进窗口，不做裁剪，边缘由底色渐变衔接 */
+[data-skin='pasture'] .shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url('../assets/pasture.jpg') center / contain no-repeat;
+}
+
+/* 蒙版压在插画之上，把画面整体提亮、降低细节，避免干扰文字 */
+[data-skin='pasture'] .shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(45deg, rgba(98, 112, 49, 0.035) 0 1px, transparent 1px 5px),
+    linear-gradient(
+      180deg,
+      rgba(252, 249, 239, 0.88) 0%,
+      rgba(252, 249, 239, 0.7) 40%,
+      rgba(252, 249, 239, 0.74) 74%,
+      rgba(250, 246, 235, 0.9) 100%
+    ),
+    radial-gradient(ellipse 118% 92% at 50% 42%, transparent 48%, rgba(250, 246, 235, 0.38) 100%);
+}
+
+[data-skin='pasture'] .sidebar {
+  -webkit-backdrop-filter: blur(4px) saturate(1.05);
+  backdrop-filter: blur(4px) saturate(1.05);
+}
+
+[data-skin='pasture'] .brand {
+  border-bottom-color: #cdd8c4;
+}
+
+[data-skin='pasture'] .brand-word {
+  color: #2b3730;
+  letter-spacing: 0.14em;
+}
+
+[data-skin='pasture'] .nav-item.active {
+  rotate: -0.9deg;
+}
+
+[data-skin='pasture'] .nav-item.active:hover:not(:disabled) {
+  rotate: -0.9deg;
+  transform: translateY(-1px);
+}
+
+[data-skin='pasture'] .nav-item.active .nav-tile {
+  color: #f7f2e4;
+  background: #37545a;
+}
+
+/* 页首徽标沿用插画的胶囊标签：浅青底、青边、微倾斜 */
+[data-skin='pasture'] .plate-kicker {
+  padding: 3px 10px;
+  border-color: #a9c4cd;
+  border-radius: 999px;
+  background: #e8eef1;
+  color: #2f6f7e;
+  letter-spacing: 0.16em;
+  rotate: -1deg;
+  box-shadow: 2px 2px 0 rgba(47, 111, 126, 0.12);
+}
+
+[data-skin='pasture'] .plate-version {
+  border-color: #dcc8cd;
+  border-radius: 999px;
+  background: #fbf5f6;
+  color: #a95f70;
+  box-shadow: 2px 2px 0 rgba(169, 95, 112, 0.12);
+}
+
+[data-skin='pasture'] .plate-version::before {
+  background: #9dbb63;
+  box-shadow: 1px 1px 0 #6c8541;
+}
+
+/* 标题下压一道草甸绿荧光笔痕 */
+[data-skin='pasture'] .plate h1 {
+  padding: 0 2px;
+  background-image: linear-gradient(
+    180deg,
+    transparent 58%,
+    rgba(157, 187, 99, 0.5) 58%,
+    rgba(157, 187, 99, 0.5) 90%,
+    transparent 90%
+  );
+}
+
+[data-skin='pasture'] .plate {
+  position: relative;
+  z-index: 1;
+}
+
+[data-skin='pasture'] .page {
+  position: relative;
+  z-index: 1;
+}
+
+[data-skin='pasture'] .table-wrap {
+  border-color: #e1d8be;
+  border-radius: 14px;
+  background-color: rgba(253, 250, 240, 0.74);
+  background-image: radial-gradient(rgba(94, 140, 96, 0.1) 1px, transparent 1.4px);
+  background-size: 20px 20px;
+  box-shadow: 3px 3px 0 rgba(122, 105, 60, 0.12);
+}
+
+/* 表格改成彼此分离的圆角卡片行，与插画里的卡片表单一致 */
+[data-skin='pasture'] table {
+  border-collapse: separate;
+  border-spacing: 0 6px;
+}
+
+[data-skin='pasture'] th {
+  background: #e1ede3;
+  color: #235b54;
+  border-bottom: 0;
+  letter-spacing: 0.14em;
+}
+
+[data-skin='pasture'] thead th:first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+[data-skin='pasture'] thead th:last-child {
+  border-radius: 0 10px 10px 0;
+}
+
+[data-skin='pasture'] th:hover {
+  background: #d6e7da;
+  color: #1b4e58;
+}
+
+[data-skin='pasture'] tbody td {
+  background: rgba(255, 253, 245, 0.92);
+  border-top: 1px solid #ece3cb;
+  border-bottom: 1px solid #ece3cb;
+}
+
+[data-skin='pasture'] tbody tr:nth-child(even) td {
+  background: rgba(247, 243, 231, 0.94);
+}
+
+[data-skin='pasture'] tbody tr:last-child td {
+  border-bottom: 1px solid #ece3cb;
+}
+
+[data-skin='pasture'] tbody td:first-child {
+  border-left: 1px solid #ece3cb;
+  border-radius: 10px 0 0 10px;
+}
+
+[data-skin='pasture'] tbody td:last-child {
+  border-right: 1px solid #ece3cb;
+  border-radius: 0 10px 10px 0;
+}
+
+[data-skin='pasture'] tbody tr:hover td {
+  background: #fdf5e4;
+  border-color: #cddcc2;
+}
+
+[data-skin='pasture'] tbody tr.selected td {
+  background: #f9e8d4;
+  border-color: #e4bb90;
+}
+
+[data-skin='pasture'] tbody tr.selected td:first-child {
+  border-left: 4px solid #9dbb63;
+  padding-left: 8px;
+  box-shadow: none;
+}
+
+[data-skin='pasture'] th:nth-child(4),
+[data-skin='pasture'] th:nth-child(5),
+[data-skin='pasture'] th:nth-child(6) {
+  color: #8a6a2e;
+}
+
+[data-skin='pasture'] td:first-child {
+  color: #2b3730;
+}
+
+[data-skin='pasture'] td:nth-child(3) {
+  color: #2f6f7e;
+}
+
+[data-skin='pasture'] td:nth-child(4),
+[data-skin='pasture'] td:nth-child(5),
+[data-skin='pasture'] td:nth-child(6) {
+  color: #57655a;
+}
+
+[data-skin='pasture'] .preview {
+  padding: 12px 14px;
+  border-color: #c4ac7c;
+  border-top: 3px solid #4a98a6;
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 rgba(122, 105, 60, 0.16), inset 0 1px 0 #fffdf0;
+}
+
+[data-skin='pasture'] .preview-head::before {
+  color: #8a6a2e;
+}
+
+[data-skin='pasture'] .status {
+  background: rgba(251, 247, 236, 0.94);
+  border-top-color: #dcd3b8;
+  color: #2f6f7e;
+}
+
+[data-skin='pasture'] .sidebar-foot::before {
+  width: 6px;
+  height: 6px;
+  background: #9dbb63;
+  box-shadow: 1px 1px 0 #6c8541;
+}
+
+[data-skin='pasture'] .brand-meta::after {
+  background: #9dbb63;
+  box-shadow: 1px 1px 0 #6c8541;
+}
+
+[data-skin='pasture'] .skin-trigger {
+  border-color: #d6cbb0;
+  border-radius: 8px;
+  background: #fdfaf0;
+  color: #2f6f7e;
+  box-shadow: 2px 2px 0 rgba(154, 118, 40, 0.12);
+}
+
+[data-skin='pasture'] .skin-trigger:hover:not(:disabled) {
+  color: #1b4e58;
+  background: #eaf1f2;
+  border-color: #4a98a6;
+}
+
+[data-skin='pasture'] .skin-menu {
+  border-color: #c97c8c;
+  background: #fefcf4;
+  box-shadow: 6px 6px 0 rgba(43, 55, 48, 0.18);
+}
+
+[data-skin='pasture'] .skin-menu-item:hover:not(:disabled) {
+  background: #f5f1e0;
+  border-color: #cbbfa0;
+}
+
+[data-skin='pasture'] .titlebar {
+  -webkit-backdrop-filter: blur(6px) saturate(1.04);
+  backdrop-filter: blur(6px) saturate(1.04);
+}
+
+[data-skin='pasture'] .titlebar-title {
+  color: #2f6f7e;
+  letter-spacing: 0.24em;
+}
+
+/* 按钮：像素游戏式硬边直角、双层斜面、实心偏移投影，不用渐变与模糊，普通按钮再交替微倾 */
+[data-skin='pasture'] button:not(.titlebar-btn):not(.nav-item):not(.skin-menu-item):not(.ghost) {
+  border-width: 2px;
+  border-radius: 0;
+  letter-spacing: 0.08em;
+  box-shadow:
+    inset 1px 1px 0 var(--btn-light),
+    inset -1px -1px 0 var(--btn-dark),
+    3px 3px 0 #d8bf85;
+}
+
+[data-skin='pasture'] button:not(.titlebar-btn):not(.nav-item):not(.skin-menu-item):not(.skin-trigger):not(.app-rail-trigger):not(.ghost) {
+  rotate: -0.8deg;
+}
+
+[data-skin='pasture'] button:not(.titlebar-btn):not(.nav-item):not(.skin-menu-item):not(.skin-trigger):not(.app-rail-trigger):not(.ghost):nth-of-type(even) {
+  rotate: 0.7deg;
+}
+
+/* 主按钮：深青实心配金色实心投影，按下时整体沉进去 */
+[data-skin='pasture'] button.primary {
+  background: #2f6f7e;
+  border-color: #17424b;
+  color: #fdf7e6;
+  box-shadow:
+    inset 1px 1px 0 #5f9daa,
+    inset -1px -1px 0 #1c4a55,
+    4px 4px 0 #e4be72;
+}
+
+[data-skin='pasture'] button.primary:hover:not(:disabled) {
+  background: #38828f;
+  border-color: #17424b;
+  color: #fdf7e6;
+  box-shadow:
+    inset 1px 1px 0 #6cadba,
+    inset -1px -1px 0 #1c4a55,
+    3px 3px 0 #e4be72;
+  transform: translate(1px, 1px);
+}
+
+[data-skin='pasture'] button.primary:active:not(:disabled) {
+  background: #27606d;
+  box-shadow:
+    inset 2px 2px 0 #1c4a55,
+    inset -1px -1px 0 #5f9daa;
+  transform: translate(4px, 4px);
+}
+
+/* 幽灵按钮平时无框，悬停时补上像素边与实心投影 */
+[data-skin='pasture'] button.ghost {
+  border-radius: 0;
+}
+
+[data-skin='pasture'] button.ghost:hover:not(:disabled) {
+  border-color: #a98f57;
+  background: #fbf5e2;
+  color: #2b3730;
+  box-shadow: 2px 2px 0 #d8bf85;
+}
+
+[data-skin='pasture'] input,
+[data-skin='pasture'] select,
+[data-skin='pasture'] textarea {
+  border-radius: 0;
+}
+
+/* 细滚动条：与像素风一致，去掉圆角与内边距，只留一条窄滑块 */
+[data-skin='pasture'] ::-webkit-scrollbar {
+  width: var(--scroll-size);
+  height: var(--scroll-size);
+}
+
+[data-skin='pasture'] ::-webkit-scrollbar-track {
+  background: transparent;
+  border: 0;
+}
+
+[data-skin='pasture'] ::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 0;
+  border-radius: 0;
+}
+
+[data-skin='pasture'] ::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+/* 主区星空：与参考稿一致的像素十字星，逐颗错峰闪烁 */
+[data-skin='pasture'] .main {
+  position: relative;
+}
+
+.pasture-stars {
+  display: none;
+}
+
+[data-skin='pasture'] .pasture-stars {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+[data-skin='pasture'] .pasture-stars i {
+  position: absolute;
+  display: block;
+  background: #e8bf6a;
+  clip-path: polygon(
+    40% 0,
+    60% 0,
+    60% 40%,
+    100% 40%,
+    100% 60%,
+    60% 60%,
+    60% 100%,
+    40% 100%,
+    40% 60%,
+    0 60%,
+    0 40%,
+    40% 40%
+  );
+  animation: pastureTwinkle 2.2s steps(2, end) infinite;
+}
+
+[data-skin='pasture'] .pasture-stars i::before {
+  content: '';
+  position: absolute;
+  inset: 40%;
+  background: #fff4c8;
+}
+
+[data-skin='pasture'] .pasture-stars i:nth-child(1) {
+  top: 9px;
+  left: 6%;
+  width: 10px;
+  height: 10px;
+  animation-duration: 2.6s;
+  animation-delay: 0.2s;
+}
+
+[data-skin='pasture'] .pasture-stars i:nth-child(2) {
+  top: 22px;
+  left: 28%;
+  width: 16px;
+  height: 16px;
+  animation-duration: 2.1s;
+  animation-delay: 0.9s;
+}
+
+[data-skin='pasture'] .pasture-stars i:nth-child(3) {
+  top: 7px;
+  left: 47%;
+  width: 12px;
+  height: 12px;
+  animation-duration: 2.8s;
+  animation-delay: 1.4s;
+}
+
+[data-skin='pasture'] .pasture-stars i:nth-child(4) {
+  top: 48px;
+  left: 66%;
+  width: 18px;
+  height: 18px;
+  animation-duration: 2.3s;
+  animation-delay: 0.5s;
+}
+
+[data-skin='pasture'] .pasture-stars i:nth-child(5) {
+  top: 11px;
+  left: 92%;
+  width: 9px;
+  height: 9px;
+  animation-duration: 1.9s;
+  animation-delay: 1.1s;
+}
+
+@keyframes pastureTwinkle {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12) rotate(8deg);
+  }
+}

@@ -1,4 +1,4 @@
-export type SkinId = 'neon' | 'terminal' | 'frost' | 'paper' | 'whirl'
+export type SkinId = 'terminal' | 'cosmos' | 'frost' | 'paper' | 'whirl' | 'pasture'
 
 export interface Skin {
   id: SkinId
@@ -14,16 +14,16 @@ export const LEGACY_THEME_KEY = 'toolbox:theme'
 
 export const SKINS: Skin[] = [
   {
-    id: 'neon',
-    name: '霓虹夜',
-    hint: '像素赛博朋克 · 霓虹青 · 荧光粉',
-    swatch: ['#0b0818', '#86e9ff', '#ff3d81']
-  },
-  {
     id: 'terminal',
     name: '终端绿',
     hint: 'CRT 终端 · 磷光单色 · 无阴影',
     swatch: ['#030805', '#7dffb0', '#ffdf6e']
+  },
+  {
+    id: 'cosmos',
+    name: '深空',
+    hint: '复古未来 · 宇宙朋克 · 轨道索引',
+    swatch: ['#06070c', '#e6a09b', '#d6c2b2']
   },
   {
     id: 'frost',
@@ -42,6 +42,12 @@ export const SKINS: Skin[] = [
     name: '旋白',
     hint: '灰白实验 · 半调点阵 · 旋转动效',
     swatch: ['#f1f1ee', '#1b1b19', '#a9a9a2']
+  },
+  {
+    id: 'pasture',
+    name: '牧场',
+    hint: '像素牧场 · 草甸青 · 暮色粉 · 插画背景',
+    swatch: ['#fbf6e6', '#2c5450', '#7fae4f']
   }
 ]
 
@@ -70,11 +76,12 @@ export function readStoredSkin(): SkinId {
 
 /** 各皮肤对应的窗口底色，用于无边框窗口的背景同步 */
 const WINDOW_BG: Record<SkinId, string> = {
-  neon: '#06050d',
   terminal: '#030805',
+  cosmos: '#06070c',
   frost: '#d8e8f6',
   paper: '#f4efe3',
-  whirl: '#f1f1ee'
+  whirl: '#f1f1ee',
+  pasture: '#efe7d3'
 }
 
 export function applySkin(id: SkinId): void {

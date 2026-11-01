@@ -281,6 +281,13 @@ export default function App(): JSX.Element {
         </aside>
 
         <main className="main">
+          <div className="pasture-stars" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
           <header className="plate">
             <div className="plate-row">
               <span className="plate-kicker">
