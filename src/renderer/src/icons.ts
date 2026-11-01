@@ -23,6 +23,7 @@ import {
   Sparkles,
   Terminal,
   Video,
+  Wallet,
   WandSparkles
 } from 'lucide-react'
 
@@ -51,6 +52,7 @@ export const PLUGIN_ICONS: Record<string, LucideIcon> = {
   sparkles: Sparkles,
   terminal: Terminal,
   video: Video,
+  wallet: Wallet,
   wand: WandSparkles
 }
 
