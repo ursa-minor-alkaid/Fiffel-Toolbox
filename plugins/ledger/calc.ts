@@ -58,6 +58,16 @@ export function weekRange(now = new Date()): Range {
   }
 }
 
+/** ISO 8601 周号，周四所在的年份即该周的年份 */
+export function isoWeek(date: Date): string {
+  const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const day = thursday.getDay() || 7
+  thursday.setDate(thursday.getDate() + 4 - day)
+  const yearStart = new Date(thursday.getFullYear(), 0, 1)
+  const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return `${thursday.getFullYear()}-W${pad(week)}`
+}
+
 export function customRange(from: string, to: string): Range {
   const fallback = today()
   let start = from || fallback
@@ -89,13 +99,14 @@ export function periodPrefix(kind: 'month' | 'week' | 'custom'): string {
 
 export function fileTag(kind: 'month' | 'week' | 'custom', range: Range): string {
   if (kind === 'month') return range.label
+  if (kind === 'week') return isoWeek(new Date(`${range.from}T00:00:00`))
   return `${range.from}_${range.to}`
 }
 
 /** 最新一天的汇率；没有数据时返回 null */
 export function latestRates(meta: Meta): { date: string; map: Partial<Record<Currency, number>> } | null {
   if (!meta.rates.length) return null
-  const sorted = [...meta.rates].sort((a, b) => (a.date < b.date ? 1 : -1))
+  const sorted = [...meta.rates].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   return sorted[0]
 }
 
@@ -131,18 +142,151 @@ export function formatAmount(cents: number): string {
   return (cents / 100).toFixed(2)
 }
 
-/** 解析金额输入，支持四则运算，返回分 */
+const OPERATORS: Record<string, { prec: number; apply: (left: number, right: number) => number }> = {
+  '+': { prec: 1, apply: (left, right) => left + right },
+  '-': { prec: 1, apply: (left, right) => left - right },
+  '*': { prec: 2, apply: (left, right) => left * right },
+  '/': { prec: 2, apply: (left, right) => (right === 0 ? Number.NaN : left / right) }
+}
+
+/** 一元负号，优先级高于乘除 */
+const NEGATE = 'neg'
+
+const precedenceOf = (token: string): number => {
+  if (token === NEGATE) return 3
+  return OPERATORS[token]?.prec ?? 0
+}
+
+/** 拆分金额表达式；出现非法字符或数字格式错误时返回 null */
+function tokenizeAmount(text: string): string[] | null {
+  const tokens: string[] = []
+  let index = 0
+  while (index < text.length) {
+    const char = text[index]
+    if ((char >= '0' && char <= '9') || char === '.') {
+      let end = index
+      let dots = 0
+      while (end < text.length) {
+        const current = text[end]
+        if (current === '.') {
+          dots += 1
+          if (dots > 1) return null
+        } else if (current < '0' || current > '9') {
+          break
+        }
+        end += 1
+      }
+      const number = text.slice(index, end)
+      if (number === '.') return null
+      tokens.push(number)
+      index = end
+      continue
+    }
+    if (OPERATORS[char] || char === '(' || char === ')') {
+      tokens.push(char)
+      index += 1
+      continue
+    }
+    return null
+  }
+  return tokens
+}
+
+/**
+ * 解析金额输入，支持四则运算与括号，返回分。
+ * 自行解析而不使用 eval / Function，避免被渲染层 CSP 拦截。
+ */
 export function parseAmountToCents(raw: string): number | null {
   const text = raw.trim().replace(/[¥€$£,，\s]/g, '')
   if (!text) return null
-  if (!/^[\d.+\-*/()\s.]+$/.test(text)) return null
-  try {
-    const value = Function(`"use strict";return (${text})`)()
-    if (typeof value !== 'number' || !Number.isFinite(value)) return null
-    return Math.round(value * 100)
-  } catch {
-    return null
+  const tokens = tokenizeAmount(text)
+  if (!tokens || !tokens.length) return null
+
+  const output: string[] = []
+  const pending: string[] = []
+  let expectValue = true
+
+  for (const token of tokens) {
+    if (OPERATORS[token] || token === '(' || token === ')') {
+      if (token === '(') {
+        if (!expectValue) return null
+        pending.push(token)
+        continue
+      }
+      if (token === ')') {
+        if (expectValue) return null
+        let matched = false
+        while (pending.length) {
+          const top = pending.pop() as string
+          if (top === '(') {
+            matched = true
+            break
+          }
+          output.push(top)
+        }
+        if (!matched) return null
+        continue
+      }
+      if (expectValue) {
+        // 正号可忽略，负号作为一元运算处理
+        if (token === '+') continue
+        if (token !== '-') return null
+        pending.push(NEGATE)
+        continue
+      }
+      while (pending.length) {
+        const top = pending[pending.length - 1]
+        if (top === '(' || precedenceOf(top) < precedenceOf(token)) break
+        output.push(pending.pop() as string)
+      }
+      pending.push(token)
+      expectValue = true
+      continue
+    }
+    if (!expectValue) return null
+    output.push(token)
+    expectValue = false
   }
+
+  if (expectValue) return null
+  while (pending.length) {
+    const top = pending.pop() as string
+    if (top === '(') return null
+    output.push(top)
+  }
+
+  const stack: number[] = []
+  for (const token of output) {
+    if (token === NEGATE) {
+      const value = stack.pop()
+      if (value === undefined) return null
+      stack.push(-value)
+      continue
+    }
+    const operator = OPERATORS[token]
+    if (!operator) {
+      const value = Number(token)
+      if (!Number.isFinite(value)) return null
+      stack.push(value)
+      continue
+    }
+    const right = stack.pop()
+    const left = stack.pop()
+    if (left === undefined || right === undefined) return null
+    const value = operator.apply(left, right)
+    if (!Number.isFinite(value)) return null
+    stack.push(value)
+  }
+  if (stack.length !== 1) return null
+  return Math.round(stack[0] * 100)
+}
+
+/** 解析汇率一类的普通小数，按原精度返回 */
+export function parseRate(raw: string): number | null {
+  const text = raw.trim().replace(/[,\s]/g, '')
+  if (!text || !/^\d*\.?\d+$/.test(text)) return null
+  const value = Number(text)
+  return Number.isFinite(value) && value > 0 ? value : null
 }
 
 export interface CategoryLabel {

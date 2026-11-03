@@ -127,6 +127,17 @@
   letter-spacing: 0.04em;
 }
 
+.ledger-amount.is-invalid {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.ledger-no-account {
+  font-size: 11px;
+  color: var(--red);
+  white-space: nowrap;
+}
+
 .ledger-hint {
   min-height: 14px;
   font-size: 10.5px;
@@ -188,7 +199,7 @@
 .ledger-categories {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   padding-top: 2px;
 }
 
@@ -204,6 +215,7 @@
 }
 
 .ledger-chip {
+  position: relative;
   padding: 4px 10px;
   font-size: 11.5px;
   color: var(--cream);
@@ -223,6 +235,60 @@
   color: var(--pink-hot);
   border-color: var(--pink);
   background: var(--panel-3);
+  /* 选中时右上角的删除标记需要压在相邻标签之上 */
+  z-index: 1;
+}
+
+/* 新增二级标签的输入框，位于标签组最左侧，回车即保存 */
+.ledger-chip-add {
+  flex: 0 0 auto;
+  width: 82px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--cream);
+  background: var(--panel-2);
+  border: max(1px, var(--bd)) solid var(--hairline);
+}
+
+.ledger-chip-add::placeholder {
+  font-size: 11px;
+  color: var(--placeholder);
+}
+
+/* 全局 input 的悬停与聚焦会换成青色描边，这里保持与标签一致的边框 */
+.ledger-chip-add:hover {
+  border-color: var(--hairline);
+}
+
+.ledger-chip-add:focus,
+.ledger-chip-add:focus-visible {
+  outline: none;
+  border-color: var(--pink);
+  box-shadow: none;
+}
+
+/* 选中标签右上角的删除按钮，配色取自皮肤变量 */
+.ledger-chip-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--red);
+  background: var(--panel);
+  border: max(1px, var(--bd)) solid var(--red);
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.ledger-chip-x:hover {
+  color: var(--panel);
+  background: var(--red);
 }
 
 /* ---------- 期间与筛选 ---------- */
@@ -560,6 +626,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
+  /* 作为卡片的 offsetParent，拖动时用 offsetLeft / offsetTop 读取布局槽位 */
+  position: relative;
 }
 
 .ledger-account-card {
@@ -570,10 +638,41 @@
   background: var(--panel);
   border: max(1px, var(--bd)) solid var(--hairline);
   border-radius: var(--radius-lg);
+  cursor: grab;
+  /* 与侧边栏一致：指针按下后由脚本接管，不被浏览器当成滚动 */
+  touch-action: none;
+  /* 位移补间由脚本写入内联样式，这里只过渡配色 */
+  transition:
+    background var(--motion-plain),
+    border-color var(--motion-plain);
+  /* 拖动换位时不生成原生拖影，避免出现重影 */
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.ledger-account-grid.is-sorting .ledger-account-card {
+  cursor: grabbing;
+}
+
+/* 被拖卡片只用配色与描边区分，位置由网格重排决定 */
+.ledger-account-card.is-dragging {
+  border-color: var(--pink);
+  box-shadow: var(--panel-shadow);
+  cursor: grabbing;
+  z-index: 2;
+  position: relative;
 }
 
 .ledger-account-card.is-archived {
   opacity: 0.55;
+}
+
+/* 卡片禁用了文本选择以避免拖动时选中文字，输入控件内需要恢复 */
+.ledger-account-card input,
+.ledger-account-card select,
+.ledger-account-card textarea {
+  user-select: text;
+  cursor: auto;
 }
 
 .ledger-account-head {
@@ -759,6 +858,21 @@
 [data-skin='pasture'] .ledger-summary,
 [data-skin='pasture'] .ledger-list {
   box-shadow: var(--panel-shadow);
+}
+
+/* 牧场皮肤会给标签按钮加粗边与像素斜面，输入框补齐同样的处理，避免边框深浅不一 */
+[data-skin='pasture'] .ledger-chip-add {
+  border-width: 2px;
+  border-color: var(--tag-border);
+  box-shadow:
+    inset 1px 1px 0 var(--btn-light),
+    inset -1px -1px 0 var(--btn-dark),
+    3px 3px 0 #d8bf85;
+}
+
+[data-skin='pasture'] .ledger-chip-add:focus,
+[data-skin='pasture'] .ledger-chip-add:focus-visible {
+  border-color: var(--pink);
 }
 
 @media (max-width: 900px) {

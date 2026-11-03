@@ -44,6 +44,7 @@ interface TxnDraft {
   id?: string
   type: TxnType
   date: string
+  createdAt?: number
   amount: number
   currency: Currency
   accountId: string
@@ -53,6 +54,8 @@ interface TxnDraft {
   toAccountId?: string
   toCurrency?: Currency
   toAmount?: number
+  /** 撤销删除时回传原快照，避免按当前汇率重算 */
+  rateToBase?: number
   reimbursable?: boolean
   excludeFromStats?: boolean
 }
@@ -83,8 +86,8 @@ interface RateResponse {
   rates: Record<string, number>
 }
 
-/** 现汇按央行中间价的 102% 折算 */
-const RATE_UPLIFT = 1.02
+/** 现汇按央行中间价的 100.5% 折算 */
+const RATE_UPLIFT = 1.005
 
 async function fetchCnyRates(): Promise<{ date: string; map: Partial<Record<Currency, number>> }> {
   const controller = new AbortController()
@@ -115,7 +118,7 @@ function upsertRate(meta: Meta, date: string, map: Partial<Record<Currency, numb
   } else {
     meta.rates.push({ date, map: { ...map } } satisfies RatePoint)
   }
-  meta.rates = [...meta.rates].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30)
+  meta.rates = [...meta.rates].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 30)
   meta.ratesFetchedAt = Date.now()
   meta.settings.rateUpdatedAt = Date.now()
 }
@@ -214,7 +217,7 @@ const CSV_HEADER = [
 
 function csvCell(value: string | number): string {
   const text = String(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
 function buildCsv(rows: ExportRow[]): string {
@@ -249,7 +252,13 @@ function buildCsv(rows: ExportRow[]): string {
 }
 
 function markdownHeader(args: ExportArgs): string {
-  return `# 记账导出\n\n期间：${args.from} 至 ${args.to}\n`
+  const title = args.label?.trim() || `${args.from} 至 ${args.to}`
+  return `# 记账导出\n\n期间：${title}\n`
+}
+
+/** Markdown 表格单元格转义：竖线会破坏列结构，换行会破坏行结构 */
+function mdCell(value: string | number): string {
+  return String(value).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
 }
 
 function buildMarkdown(rows: ExportRow[], args: ExportArgs, meta: Meta): string {
@@ -269,7 +278,7 @@ function buildMarkdown(rows: ExportRow[], args: ExportArgs, meta: Meta): string 
     const category = row.child ? `${row.parent} / ${row.child}` : row.parent || '转账'
     const amount = `${CURRENCY_META[row.currency].symbol}${row.amount.toFixed(2)}`
     lines.push(
-      `| ${row.date} | ${row.type} | ${category} | ${row.account} | ${amount} | ${symbol}${row.baseAmount.toFixed(2)} | ${row.note} |`
+      `| ${mdCell(row.date)} | ${mdCell(row.type)} | ${mdCell(category)} | ${mdCell(row.account)} | ${mdCell(amount)} | ${mdCell(`${symbol}${row.baseAmount.toFixed(2)}`)} | ${mdCell(row.note)} |`
     )
   }
 
@@ -405,10 +414,17 @@ const handlers: PluginMainModule['handlers'] = {
       if (!state.meta.accounts.some((item) => item.id === draft.accountId)) {
         throw new Error('账户不存在，请重新选择')
       }
+      if (draft.type !== 'transfer' && !draft.categoryId) throw new Error('请选择分类')
+      if (draft.type !== 'transfer' && !state.meta.categories.some((item) => item.id === draft.categoryId)) {
+        throw new Error('分类不存在，请重新选择')
+      }
       const existing = txns.find((item) => item.id === (draft.id ?? ''))
-      const rate =
-        existing && existing.currency === draft.currency
+      const rate = existing
+        ? existing.currency === draft.currency
           ? existing.rateToBase
+          : rateToBase(state.meta, draft.currency)
+        : draft.rateToBase && draft.rateToBase > 0
+          ? draft.rateToBase
           : rateToBase(state.meta, draft.currency)
       if (!rate) throw new Error(`缺少 ${draft.currency} 汇率，请先在设置页获取或手填`)
 
@@ -416,7 +432,7 @@ const handlers: PluginMainModule['handlers'] = {
         id: draft.id ?? newId('txn'),
         type: draft.type,
         date: draft.date,
-        createdAt: existing?.createdAt ?? Date.now(),
+        createdAt: existing?.createdAt ?? draft.createdAt ?? Date.now(),
         amount: round(draft.amount),
         currency: draft.currency,
         accountId: draft.accountId,
@@ -435,25 +451,31 @@ const handlers: PluginMainModule['handlers'] = {
         if (!state.meta.accounts.some((item) => item.id === draft.toAccountId)) {
           throw new Error('转入账户不存在，请重新选择')
         }
+        const toCurrency = draft.toCurrency ?? draft.currency
+        if (toCurrency !== draft.currency && (!draft.toAmount || draft.toAmount <= 0)) {
+          throw new Error('跨币种转账需要填写到账金额')
+        }
         record.toAccountId = draft.toAccountId
-        record.toCurrency = draft.toCurrency ?? draft.currency
-        record.toAmount = draft.toAmount && draft.toAmount > 0 ? draft.toAmount : draft.amount
+        record.toCurrency = toCurrency
+        record.toAmount = draft.toAmount && draft.toAmount > 0 ? round(draft.toAmount) : record.amount
         record.fxRate = record.toAmount / record.amount
       }
 
       const index = txns.findIndex((item) => item.id === record.id)
       if (index >= 0) txns.splice(index, 1, record)
       else txns.push(record)
-
-      state.meta.settings.lastCategoryId = record.categoryId ?? state.meta.settings.lastCategoryId
-      state.meta.settings.lastCurrency = record.currency
       return record
     })
 
-    await ledger.mutateMeta((meta) => {
-      meta.settings.lastCurrency = draft.currency
-      if (draft.categoryId) meta.settings.lastCategoryId = draft.categoryId
-    })
+    // 上次使用的币种与分类单独落盘；这一步失败不影响已保存的流水
+    try {
+      await ledger.mutateMeta((meta) => {
+        meta.settings.lastCurrency = draft.currency
+        if (draft.categoryId) meta.settings.lastCategoryId = draft.categoryId
+      })
+    } catch {
+      /* 忽略「上次使用值」的落盘失败 */
+    }
 
     return txn
   },
@@ -492,6 +514,25 @@ const handlers: PluginMainModule['handlers'] = {
     })
   },
 
+  async reorderAccounts(args, ctx): Promise<Account[]> {
+    const { ids } = args as { ids: string[] }
+    if (!Array.isArray(ids) || !ids.length) return []
+    return db(ctx).mutateMeta((meta) => {
+      // 只接受已有账户的 id，缺失的账户按原相对顺序补到末尾
+      const known = new Set(meta.accounts.map((item) => item.id))
+      const ordered = ids.filter((id, index) => known.has(id) && ids.indexOf(id) === index)
+      for (const account of meta.accounts) {
+        if (!ordered.includes(account.id)) ordered.push(account.id)
+      }
+      const next = ordered.map((id) => meta.accounts.find((item) => item.id === id) as Account)
+      next.forEach((account, index) => {
+        account.order = index
+      })
+      meta.accounts = next
+      return meta.accounts
+    })
+  },
+
   async deleteAccount(args, ctx) {
     const { id } = args as { id: string }
     const ledger = db(ctx)
@@ -509,16 +550,22 @@ const handlers: PluginMainModule['handlers'] = {
 
   async saveCategory(args, ctx) {
     const draft = args as CategoryDraft
+    const name = (draft.name ?? '').trim()
+    if (!name) throw new Error('请填写标签名称')
     return db(ctx).mutateMeta((meta) => {
       const existing = draft.id ? meta.categories.find((item) => item.id === draft.id) : undefined
       if (existing) {
-        existing.name = draft.name
+        existing.name = name
         existing.parentId = draft.parentId
         return existing
       }
+      const duplicate = meta.categories.some(
+        (item) => item.name === name && item.parentId === draft.parentId && item.type === draft.type
+      )
+      if (duplicate) throw new Error('同名标签已存在')
       const category: Category = {
         id: draft.id ?? newId('cat'),
-        name: draft.name,
+        name,
         parentId: draft.parentId,
         type: draft.type,
         order: meta.categories.reduce((max, item) => Math.max(max, item.order), -1) + 1,
@@ -527,6 +574,46 @@ const handlers: PluginMainModule['handlers'] = {
       meta.categories.push(category)
       return category
     })
+  },
+
+  /** 删除分类：引用记录迁移到同类型的「其他」，返回迁移笔数 */
+  async deleteCategory(args, ctx) {
+    const { id } = args as { id: string }
+    const ledger = db(ctx)
+    const state = await ledger.snapshotState()
+    const target = state.meta.categories.find((item) => item.id === id)
+    if (!target) return { ok: false, reason: '标签不存在' }
+    if (state.meta.categories.some((item) => item.parentId === id)) {
+      return { ok: false, reason: '该一级分类下还有标签，请先删除其标签' }
+    }
+
+    const parentFallback = state.meta.categories.find(
+      (item) => item.type === target.type && !item.parentId && item.name === '其他' && item.id !== id
+    )
+    const fallback =
+      parentFallback ??
+      state.meta.categories.find((item) => item.type === target.type && !item.parentId && item.id !== id)
+    const fallbackId = fallback?.id ?? null
+    // 记录迁移到「其他」，但「上次使用」停在原一级分类，避免界面跳到别的分类
+    const stayId = target.parentId ?? fallbackId ?? ''
+
+    const moved = state.txns.filter((txn) => txn.categoryId === id).length
+    if (moved) {
+      await ledger.mutateTxns((txns) => {
+        for (const txn of txns) {
+          if (txn.categoryId === id) txn.categoryId = fallbackId
+        }
+      })
+    }
+
+    await ledger.mutateMeta((meta) => {
+      meta.categories = meta.categories.filter((item) => item.id !== id)
+      if (meta.settings.lastCategoryId === id) {
+        meta.settings.lastCategoryId = stayId
+      }
+    })
+
+    return { ok: true, moved, fallbackId, stayId }
   },
 
   async saveSettings(args, ctx) {
@@ -564,7 +651,9 @@ const handlers: PluginMainModule['handlers'] = {
     if (!Number.isFinite(value) || value <= 0) throw new Error('汇率需要大于 0')
     return db(ctx).mutateMeta((meta) => {
       const date = today()
-      upsertRate(meta, date, { CNY: 1, [currency]: value })
+      // 以最近一次汇率为底，避免只改一个币种时其余币种在当日变成缺失
+      const carried: Partial<Record<Currency, number>> = { CNY: 1, ...(latestRates(meta)?.map ?? {}) }
+      upsertRate(meta, date, { ...carried, [currency]: value })
       return { date, map: latestRates(meta)?.map ?? {} }
     })
   },

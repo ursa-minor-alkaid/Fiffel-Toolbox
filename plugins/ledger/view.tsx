@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent
+} from 'react'
 import { usePlugin } from '../../src/renderer/src/utils'
 import {
   ACCOUNT_TYPES,
@@ -8,11 +14,14 @@ import {
   accountDelta,
   accountTotal,
   categoryLabel,
+  fileTag,
   filterTxns,
   formatMoney,
+  isoDate,
   latestRates,
   monthRange,
   parseAmountToCents,
+  parseRate,
   periodPrefix,
   rangeFor,
   rateToBase,
@@ -57,11 +66,6 @@ const messageOf = (err: unknown): string => {
   return text.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 }
 
-const centsFromText = (text: string, fallback = 0): number => {
-  const value = parseAmountToCents(text)
-  return value && value > 0 ? value : fallback
-}
-
 export default function LedgerView(): JSX.Element {
   const { invoke } = usePlugin('ledger')
   const amountRef = useRef<HTMLInputElement | null>(null)
@@ -72,7 +76,7 @@ export default function LedgerView(): JSX.Element {
   const [page, setPage] = useState<Page>('ledger')
   const [period, setPeriod] = useState<PeriodKind>('month')
   const [from, setFrom] = useState(monthRange().from)
-  const [to, setTo] = useState(monthRange().to)
+  const [to, setTo] = useState(today())
   const [filterAccount, setFilterAccount] = useState('')
   const [filterCurrency, setFilterCurrency] = useState<Currency | ''>('')
   const [keyword, setKeyword] = useState('')
@@ -92,14 +96,23 @@ export default function LedgerView(): JSX.Element {
   const [toCurrency, setToCurrency] = useState<Currency>('CNY')
   const [toAmountText, setToAmountText] = useState('')
   const [toTouched, setToTouched] = useState(false)
+  const [toCurrencyTouched, setToCurrencyTouched] = useState(false)
+  const [newSubName, setNewSubName] = useState('')
 
   const [editingTxn, setEditingTxn] = useState<{ id: string; field: 'amount' | 'category' } | null>(null)
   const [editText, setEditText] = useState('')
+  const editSettled = useRef(false)
   const [undoState, setUndoState] = useState<{ txn: Txn; index: number } | null>(null)
   undoRef.current = undoState
 
   const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null)
   const [expandedAccount, setExpandedAccount] = useState('')
+  const [dragAccountId, setDragAccountId] = useState('')
+  const accountGridRef = useRef<HTMLDivElement | null>(null)
+  const accountDragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null)
+  const accountOrderRef = useRef<string[]>([])
+  const suppressAccountClick = useRef(false)
+  const flipRects = useRef<Map<string, DOMRect> | null>(null)
   const [rateEUR, setRateEUR] = useState('')
   const [rateUSD, setRateUSD] = useState('')
   const [rateGBP, setRateGBP] = useState('')
@@ -129,7 +142,11 @@ export default function LedgerView(): JSX.Element {
       }
       const latest = latestRates(loaded.meta)
       const complete = CURRENCIES.every((item) => item === 'CNY' || Boolean(latest?.map[item]))
-      if (!latest || latest.date !== today() || !complete) {
+      const fetchedToday =
+        typeof loaded.meta.ratesFetchedAt === 'number' &&
+        isoDate(new Date(loaded.meta.ratesFetchedAt)) === today()
+      // 同一天只拉取一次，缺失币种时也要补拉
+      if (!fetchedToday || !latest || !complete) {
         void invoke<{ ok: boolean; error?: string }>('refreshRates').then((result) => {
           if (!result.ok) setRateWarning(result.error ?? '汇率获取失败，可在设置页手填')
           else setRateWarning('')
@@ -205,20 +222,23 @@ export default function LedgerView(): JSX.Element {
   }, [meta, categoryId, parentCategories])
 
   const baseCurrency = meta?.settings.baseCurrency ?? 'CNY'
-  const baseSymbol = CURRENCY_META[baseCurrency].symbol
 
   const amountCents = parseAmountToCents(amountText)
+  const amountInvalid = Boolean(amountText.trim()) && (amountCents === null || amountCents <= 0)
   const conversion = useMemo(() => {
     if (!meta || !amountCents || amountCents <= 0) return ''
     const rate = rateToBase(meta, currency)
     if (!rate) return '汇率未设置'
     const baseCents = Math.round(amountCents * rate)
     if (currency === baseCurrency) {
-      const others = CURRENCIES.filter((item) => item !== baseCurrency).map((item) => {
-        const otherRate = rateToBase(meta, item)
-        return otherRate ? `${CURRENCY_META[item].symbol}${(baseCents / otherRate / 100).toFixed(2)}` : ''
-      })
-      return `${formatMoney(baseCents, baseCurrency)} ≈ ${others.filter(Boolean).join('　·　')}`
+      const others = CURRENCIES.filter((item) => item !== baseCurrency)
+        .map((item) => {
+          const otherRate = rateToBase(meta, item)
+          return otherRate ? `${CURRENCY_META[item].symbol}${(baseCents / otherRate / 100).toFixed(2)}` : ''
+        })
+        .filter(Boolean)
+      if (!others.length) return ''
+      return `${formatMoney(baseCents, baseCurrency)} ≈ ${others.join('　·　')}`
     }
     return `${formatMoney(amountCents, currency)} ≈ ${formatMoney(baseCents, baseCurrency)}　·　1 ${currency} = ${rate.toFixed(4)} ${baseCurrency}`
   }, [meta, amountCents, currency, baseCurrency])
@@ -246,10 +266,32 @@ export default function LedgerView(): JSX.Element {
   }, [activeAccounts, accountId])
 
   useEffect(() => {
+    // 设计约定：/ 聚焦金额框，输入框内不拦截
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+      if (page !== 'ledger') return
+      event.preventDefault()
+      amountRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [page])
+
+  useEffect(() => {
     if (toAccountId && toAccountId !== accountId) return
     const alternative = activeAccounts.find((item) => item.id !== accountId)
     if (alternative) setToAccountId(alternative.id)
   }, [activeAccounts, accountId, toAccountId])
+
+  useEffect(() => {
+    // 账户被删除后筛选值失效，回到全部账户，避免列表凭空为空
+    if (!filterAccount) return
+    if (accounts.some((item) => item.id === filterAccount)) return
+    setFilterAccount('')
+  }, [accounts, filterAccount])
 
   useEffect(() => {
     if (!meta) return
@@ -282,12 +324,89 @@ export default function LedgerView(): JSX.Element {
     }
   }
 
+  /** 在当前一级分类下新增二级标签，回车即保存 */
+  const addSubCategory = async (): Promise<void> => {
+    if (!meta || type === 'transfer') return
+    const name = newSubName.trim()
+    if (!name) return
+    if (!selectedParent) {
+      flash('请先选择一级分类', true)
+      return
+    }
+    const kind = type === 'income' ? 'income' : 'expense'
+    const duplicate = meta.categories.some(
+      (item) => item.parentId === selectedParent && item.type === kind && item.name === name
+    )
+    if (duplicate) {
+      flash(`「${name}」已存在`, true)
+      return
+    }
+    try {
+      const saved = await invoke<Category>('saveCategory', { name, parentId: selectedParent, type: kind })
+      setData((prev) =>
+        prev
+          ? { ...prev, meta: { ...prev.meta, categories: [...prev.meta.categories, saved] } }
+          : prev
+      )
+      setNewSubName('')
+      setCategoryId(saved.id)
+      flash(`已新增标签「${saved.name}」`)
+    } catch (err) {
+      flash(messageOf(err), true)
+    }
+  }
+
+  /** 删除二级标签，引用记录迁移到同类型的「其他」 */
+  const removeSubCategory = async (category: Category): Promise<void> => {
+    try {
+      const result = await invoke<{
+        ok: boolean
+        reason?: string
+        moved?: number
+        fallbackId?: string | null
+        stayId?: string
+      }>('deleteCategory', { id: category.id })
+      if (!result.ok) {
+        flash(result.reason ?? '无法删除该标签', true)
+        return
+      }
+      const fallbackId = result.fallbackId ?? null
+      // 删除后停留在原一级分类下，不跟着迁移目标跳到「其他」
+      const stayId = result.stayId ?? category.parentId ?? fallbackId ?? ''
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          txns: prev.txns.map((txn) =>
+            txn.categoryId === category.id ? { ...txn, categoryId: fallbackId } : txn
+          ),
+          meta: {
+            ...prev.meta,
+            categories: prev.meta.categories.filter((item) => item.id !== category.id),
+            settings:
+              prev.meta.settings.lastCategoryId === category.id
+                ? { ...prev.meta.settings, lastCategoryId: stayId }
+                : prev.meta.settings
+          }
+        }
+      })
+      if (categoryId === category.id) setCategoryId(stayId)
+      flash(result.moved ? `已删除标签，${result.moved} 笔记录转到其他` : '已删除标签')
+    } catch (err) {
+      flash(messageOf(err), true)
+    }
+  }
+
   const saveEntry = async (): Promise<void> => {
     if (!meta) return
     const cents = parseAmountToCents(amountText)
     if (!cents || cents <= 0) {
       flash('金额需要大于 0', true)
       amountRef.current?.focus()
+      return
+    }
+    if (!accountId) {
+      flash('请先在账户页新增账户', true)
       return
     }
     if (type !== 'transfer' && !categoryId) {
@@ -312,6 +431,10 @@ export default function LedgerView(): JSX.Element {
       draft.toAccountId = toAccountId
       draft.toCurrency = toCurrency
       const toCents = parseAmountToCents(toAmountText)
+      if (toCurrency !== currency && (!toCents || toCents <= 0)) {
+        flash('跨币种转账需要填写到账金额', true)
+        return
+      }
       draft.toAmount = toCents && toCents > 0 ? toCents : cents
     }
 
@@ -330,7 +453,7 @@ export default function LedgerView(): JSX.Element {
             settings: {
               ...prev.meta.settings,
               lastCurrency: currency,
-              lastCategoryId: categoryId
+              lastCategoryId: draft.categoryId ? categoryId : prev.meta.settings.lastCategoryId
             }
           }
         }
@@ -339,6 +462,7 @@ export default function LedgerView(): JSX.Element {
       setNote('')
       setToAmountText('')
       setToTouched(false)
+      setToCurrencyTouched(false)
       flash('已保存')
       amountRef.current?.focus()
     } catch (err) {
@@ -415,16 +539,28 @@ export default function LedgerView(): JSX.Element {
 
   const saveRates = async (): Promise<void> => {
     try {
-      const eur = parseAmountToCents(rateEUR)
-      const usd = parseAmountToCents(rateUSD)
-      const gbp = parseAmountToCents(rateGBP)
-      if (!eur || eur <= 0 || !usd || usd <= 0 || !gbp || gbp <= 0) {
-        flash('汇率需要填写大于 0 的数值', true)
+      const entries: Array<[Currency, string]> = [
+        ['EUR', rateEUR],
+        ['USD', rateUSD],
+        ['GBP', rateGBP]
+      ]
+      const filled: Array<[Currency, number]> = []
+      for (const [item, text] of entries) {
+        if (!text.trim()) continue
+        const value = parseRate(text)
+        if (!value) {
+          flash(`${item} 汇率需要填写大于 0 的数值`, true)
+          return
+        }
+        filled.push([item, value])
+      }
+      if (!filled.length) {
+        flash('请至少填写一个汇率', true)
         return
       }
-      await invoke('saveRate', { currency: 'EUR', value: eur / 100 })
-      await invoke('saveRate', { currency: 'USD', value: usd / 100 })
-      await invoke('saveRate', { currency: 'GBP', value: gbp / 100 })
+      for (const [item, value] of filled) {
+        await invoke('saveRate', { currency: item, value })
+      }
       const reloaded = await invoke<LedgerData>('load')
       setData(reloaded)
       setRateWarning('')
@@ -454,13 +590,12 @@ export default function LedgerView(): JSX.Element {
 
   const exportData = async (format: 'csv' | 'md' | 'xlsx'): Promise<void> => {
     try {
-      const fileBase = period === 'month' ? range.label : `${range.from}_${range.to}`
       const result = await invoke<{ path: string | null; count: number }>('export', {
         format,
         from: range.from,
         to: range.to,
         label: periodPrefix(period) + range.label,
-        fileBase,
+        fileBase: fileTag(period, range),
         accountId: filterAccount || undefined,
         currency: filterCurrency || undefined,
         keyword
@@ -483,8 +618,15 @@ export default function LedgerView(): JSX.Element {
     }
     const initial: Partial<Record<Currency, number>> = {}
     for (const item of CURRENCIES) {
-      const cents = parseAmountToCents(accountDraft.initial[item] ?? '')
-      if (cents && cents > 0) initial[item] = cents
+      const text = (accountDraft.initial[item] ?? '').trim()
+      if (!text) continue
+      const cents = parseAmountToCents(text)
+      if (cents === null) {
+        flash(`期初余额格式不正确：${item}`, true)
+        return
+      }
+      // 信用类账户允许负值，0 视作未填
+      if (cents !== 0) initial[item] = cents
     }
     try {
       const saved = await invoke<Account>('saveAccount', {
@@ -532,6 +674,10 @@ export default function LedgerView(): JSX.Element {
         const next = accounts.find((item) => item.id !== saved.id && !item.archived)
         setAccountId(next?.id ?? '')
       }
+      if (saved.archived && toAccountId === saved.id) {
+        const alternative = accounts.find((item) => item.id !== saved.id && !item.archived && item.id !== accountId)
+        setToAccountId(alternative?.id ?? '')
+      }
     } catch (err) {
       flash(messageOf(err), true)
     }
@@ -544,6 +690,9 @@ export default function LedgerView(): JSX.Element {
         flash(result.reason ?? '无法删除该账户', true)
         return
       }
+      const fallback = accounts.find((item) => item.id !== account.id && !item.archived)
+      if (accountId === account.id) setAccountId(fallback?.id ?? '')
+      if (toAccountId === account.id) setToAccountId(fallback?.id ?? '')
       setData((prev) =>
         prev
           ? { ...prev, meta: { ...prev.meta, accounts: prev.meta.accounts.filter((item) => item.id !== account.id) } }
@@ -557,7 +706,211 @@ export default function LedgerView(): JSX.Element {
 
   const cycleCurrency = (value: Currency): void => {
     setCurrency(value)
-    if (!toTouched) setToCurrency(value)
+    // 未手动选过转入币种时跟随转出币种
+    if (!toCurrencyTouched) setToCurrency(value)
+  }
+
+  /** 乐观更新本地顺序，order 字段按新位置重排 */
+  const applyAccountOrder = (ids: string[]): void => {
+    // 先记录换位前的布局位置，供渲染后做位移补间
+    const grid = accountGridRef.current
+    if (grid) {
+      const nodes = Array.from(grid.querySelectorAll<HTMLElement>('.ledger-account-card'))
+      const map = new Map<string, DOMRect>()
+      nodes.forEach((node) => {
+        node.style.transition = 'none'
+        node.style.transform = ''
+        const id = node.dataset.id
+        if (id) map.set(id, node.getBoundingClientRect())
+      })
+      flipRects.current = map
+    }
+
+    setData((prev) => {
+      if (!prev) return prev
+      const byId = new Map(prev.meta.accounts.map((item) => [item.id, item]))
+      const next: Account[] = []
+      for (const id of ids) {
+        const account = byId.get(id)
+        if (account) next.push(account)
+      }
+      for (const account of prev.meta.accounts) {
+        if (!ids.includes(account.id)) next.push(account)
+      }
+      return {
+        ...prev,
+        meta: {
+          ...prev.meta,
+          accounts: next.map((account, index) => ({ ...account, order: index }))
+        }
+      }
+    })
+  }
+
+  useEffect(() => {
+    // FLIP：按换位前后的位置差做一次短补间，使卡片是滑过去而不是瞬移
+    const previous = flipRects.current
+    if (!previous) return
+    flipRects.current = null
+    const grid = accountGridRef.current
+    if (!grid) return
+    const nodes = Array.from(grid.querySelectorAll<HTMLElement>('.ledger-account-card'))
+    const current = nodes.map((node) => node.getBoundingClientRect())
+    nodes.forEach((node, index) => {
+      const id = node.dataset.id
+      const before = id ? previous.get(id) : undefined
+      if (!before) return
+      const dx = before.left - current[index].left
+      const dy = before.top - current[index].top
+      if (!dx && !dy) {
+        node.style.transition = ''
+        node.style.transform = ''
+        return
+      }
+      node.style.transition = 'none'
+      node.style.transform = `translate(${dx}px, ${dy}px)`
+      requestAnimationFrame(() => {
+        node.style.transition = 'transform 0.16s cubic-bezier(0.22, 1, 0.36, 1)'
+        node.style.transform = ''
+      })
+    })
+  }, [accounts])
+
+  /**
+   * 拖动重排，行为与侧边栏一致：
+   * 以拖动开始时各卡片的槽位为基准判断落点，槽位固定所以指针不动就不会抖动；
+   * 不生成拖影节点，只给被拖卡片切换描边样式，因此不会出现重影。
+   */
+  const beginAccountDrag = (event: ReactPointerEvent<HTMLDivElement>, id: string): void => {
+    if (event.button !== 0) return
+    const origin = event.target as HTMLElement
+    if (origin.closest('input, select, textarea')) return
+    if (accountDraft) return
+
+    const grid = accountGridRef.current
+    if (!grid) return
+    const scroller = grid.closest('.ledger-page') as HTMLElement | null
+    const startX = event.clientX
+    const startY = event.clientY
+    const pointerId = event.pointerId
+    const nodes = Array.from(grid.querySelectorAll<HTMLElement>('.ledger-account-card'))
+    if (nodes.length < 2) return
+    if (!nodes.some((node) => node.dataset.id === id)) return
+
+    const originalIds = nodes.map((node) => node.dataset.id ?? '').filter(Boolean)
+    if (originalIds.length < 2) return
+
+    // 槽位在拖动开始时固定下来，换位不会改变它，因此指针不动就不会抖动
+    const slots = nodes.map((node) => ({
+      id: node.dataset.id ?? '',
+      top: node.offsetTop,
+      left: node.offsetLeft,
+      width: node.offsetWidth,
+      height: node.offsetHeight
+    }))
+
+    accountDragRef.current = { id, startX, startY, moved: false }
+    accountOrderRef.current = originalIds
+
+    const moveTo = (pointerX: number, pointerY: number): void => {
+      const drag = accountDragRef.current
+      if (!drag) return
+      const box = grid.getBoundingClientRect()
+      // 换算到网格内容坐标；滚动会同步反映在 box 上
+      const localX = pointerX - box.left
+      const localY = pointerY - box.top
+      const others = slots.filter((slot) => slot.id !== drag.id)
+      if (!others.length) return
+
+      // 行优先：指针在某张卡片上沿之上，或同排且在中线左侧，即插到该卡片之前
+      let insertAt = others.length
+      for (let index = 0; index < others.length; index += 1) {
+        const slot = others[index]
+        if (localY < slot.top) {
+          insertAt = index
+          break
+        }
+        if (localY <= slot.top + slot.height && localX < slot.left + slot.width / 2) {
+          insertAt = index
+          break
+        }
+      }
+
+      const next = others.map((slot) => slot.id)
+      next.splice(Math.min(insertAt, next.length), 0, drag.id)
+      if (next.join('|') === accountOrderRef.current.join('|')) return
+      accountOrderRef.current = next
+      applyAccountOrder(next)
+    }
+
+    let lastX = startX
+    let lastY = startY
+    let frame = 0
+
+    // 指针贴近上下边缘时连续滚动，滚动后重新计算落点
+    const autoScroll = (): void => {
+      if (!accountDragRef.current) return
+      if (scroller) {
+        const box = scroller.getBoundingClientRect()
+        const edge = 32
+        if (lastY < box.top + edge) {
+          scroller.scrollTop -= Math.ceil((box.top + edge - lastY) / 4)
+        } else if (lastY > box.bottom - edge) {
+          scroller.scrollTop += Math.ceil((lastY - box.bottom + edge) / 4)
+        }
+      }
+      moveTo(lastX, lastY)
+      frame = requestAnimationFrame(autoScroll)
+    }
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId !== pointerId) return
+      const drag = accountDragRef.current
+      if (!drag) return
+      lastX = moveEvent.clientX
+      lastY = moveEvent.clientY
+      if (!drag.moved) {
+        const far =
+          Math.abs(moveEvent.clientY - startY) >= 4 || Math.abs(moveEvent.clientX - startX) >= 4
+        if (!far) return
+        drag.moved = true
+        setDragAccountId(id)
+        frame = requestAnimationFrame(autoScroll)
+      }
+      moveEvent.preventDefault()
+      moveTo(lastX, lastY)
+    }
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('blur', finish)
+      if (frame) cancelAnimationFrame(frame)
+      const moved = accountDragRef.current?.moved ?? false
+      const order = accountOrderRef.current
+      accountDragRef.current = null
+      setDragAccountId('')
+      if (!moved) return
+      // 拖动结束后吞掉这次点击，避免误触卡片内按钮
+      suppressAccountClick.current = true
+      window.setTimeout(() => {
+        suppressAccountClick.current = false
+      }, 0)
+      if (order.join('|') === originalIds.join('|')) return
+      void invoke<Account[]>('reorderAccounts', { ids: order })
+        .then((saved) => {
+          if (Array.isArray(saved) && saved.length) {
+            setData((prev) => (prev ? { ...prev, meta: { ...prev.meta, accounts: saved } } : prev))
+          }
+        })
+        .catch((err) => flash(messageOf(err), true))
+    }
+
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    window.addEventListener('blur', finish)
   }
 
   if (!meta) {
@@ -622,7 +975,7 @@ export default function LedgerView(): JSX.Element {
               </select>
               <input
                 ref={amountRef}
-                className="ledger-amount"
+                className={amountInvalid ? 'ledger-amount is-invalid' : 'ledger-amount'}
                 value={amountText}
                 placeholder="0.00"
                 inputMode="decimal"
@@ -645,6 +998,7 @@ export default function LedgerView(): JSX.Element {
                   </option>
                 ))}
               </select>
+              {!activeAccounts.length && <span className="ledger-no-account">先在账户页新增账户</span>}
               <input
                 className="ledger-note"
                 value={note}
@@ -673,6 +1027,7 @@ export default function LedgerView(): JSX.Element {
                   value={toCurrency}
                   onChange={(event) => {
                     setToCurrency(event.target.value as Currency)
+                    setToCurrencyTouched(true)
                     setToTouched(false)
                   }}
                 >
@@ -713,6 +1068,20 @@ export default function LedgerView(): JSX.Element {
                   ))}
                 </div>
                 <div className="ledger-chips ledger-subchips">
+                  <input
+                    className="ledger-chip-add"
+                    value={newSubName}
+                    placeholder="+ 新标签"
+                    aria-label="新增二级标签"
+                    onChange={(event) => setNewSubName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void addSubCategory()
+                      }
+                      if (event.key === 'Escape') setNewSubName('')
+                    }}
+                  />
                   {typeCategories
                     .filter((item) => item.parentId === selectedParent)
                     .map((child) => (
@@ -722,6 +1091,19 @@ export default function LedgerView(): JSX.Element {
                         onClick={() => setCategoryId(child.id)}
                       >
                         {child.name}
+                        {categoryId === child.id && (
+                          <span
+                            className="ledger-chip-x"
+                            aria-label={`删除标签 ${child.name}`}
+                            title="删除该标签"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void removeSubCategory(child)
+                            }}
+                          >
+                            ×
+                          </span>
+                        )}
                       </button>
                     ))}
                 </div>
@@ -748,8 +1130,11 @@ export default function LedgerView(): JSX.Element {
                 className={period === 'custom' ? 'ledger-seg-btn is-on' : 'ledger-seg-btn'}
                 onClick={() => {
                   setPeriod('custom')
-                  setFrom(range.from)
-                  setTo(range.to)
+                  // 历史区间默认本月 1 日至今天，已有自定义日期时保留
+                  if (!from || !to) {
+                    setFrom(monthRange().from)
+                    setTo(today())
+                  }
                 }}
               >
                 历史
@@ -757,9 +1142,34 @@ export default function LedgerView(): JSX.Element {
             </div>
             {period === 'custom' && (
               <div className="ledger-daterange">
-                <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                <input
+                  type="date"
+                  value={from}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    // 起止颠倒时直接交换，输入框与查询口径保持一致
+                    if (value && to && value > to) {
+                      setFrom(to)
+                      setTo(value)
+                      return
+                    }
+                    setFrom(value)
+                  }}
+                />
                 <span className="dim">至</span>
-                <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                <input
+                  type="date"
+                  value={to}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    if (value && from && value < from) {
+                      setTo(from)
+                      setFrom(value)
+                      return
+                    }
+                    setTo(value)
+                  }}
+                />
               </div>
             )}
             <span className="ledger-period-text">{periodLabel}</span>
@@ -915,6 +1325,7 @@ export default function LedgerView(): JSX.Element {
                         className={`ledger-row-money ${txn.type === 'income' ? 'is-income' : txn.type === 'expense' ? 'is-expense' : ''}`}
                         onDoubleClick={() => {
                           if (txn.type === 'transfer') return
+                          editSettled.current = false
                           setEditingTxn({ id: txn.id, field: 'amount' })
                           setEditText((txn.amount / 100).toFixed(2))
                         }}
@@ -926,17 +1337,26 @@ export default function LedgerView(): JSX.Element {
                             autoFocus
                             onChange={(event) => setEditText(event.target.value)}
                             onBlur={() => {
+                              if (editSettled.current) {
+                                editSettled.current = false
+                                return
+                              }
                               const cents = parseAmountToCents(editText)
                               setEditingTxn(null)
                               if (cents && cents > 0 && cents !== txn.amount) void updateTxn(txn, { amount: cents })
                             }}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter') {
+                                editSettled.current = true
                                 const cents = parseAmountToCents(editText)
                                 setEditingTxn(null)
                                 if (cents && cents > 0) void updateTxn(txn, { amount: cents })
                               }
-                              if (event.key === 'Escape') setEditingTxn(null)
+                              if (event.key === 'Escape') {
+                                // 取消时不提交，同时抑制随之触发的 blur 提交
+                                editSettled.current = true
+                                setEditingTxn(null)
+                              }
                             }}
                           />
                         ) : (
@@ -1032,7 +1452,10 @@ export default function LedgerView(): JSX.Element {
             </section>
           )}
 
-          <div className="ledger-account-grid">
+          <div
+            className={`ledger-account-grid${dragAccountId ? ' is-sorting' : ''}`}
+            ref={accountGridRef}
+          >
             {accounts.map((account) => {
               const editing = accountDraft?.id === account.id
               const total = accountTotal(txns, account, meta)
@@ -1041,7 +1464,18 @@ export default function LedgerView(): JSX.Element {
                 .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt))
                 .slice(0, 8)
               return (
-                <div key={account.id} className={`ledger-account-card${account.archived ? ' is-archived' : ''}`}>
+                <div
+                  key={account.id}
+                  data-id={account.id}
+                  className={[
+                    'ledger-account-card',
+                    account.archived ? 'is-archived' : '',
+                    account.id === dragAccountId ? 'is-dragging' : ''
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onPointerDown={(event) => beginAccountDrag(event, account.id)}
+                >
                   {editing ? (
                     <div className="ledger-account-edit">
                       <div className="ledger-form-row">
@@ -1098,11 +1532,20 @@ export default function LedgerView(): JSX.Element {
                         <span className="ledger-spacer" />
                         <button
                           className="ghost ledger-mini"
-                          onClick={() => setAccountDraft(accountDraftOf(account))}
+                          onClick={() => {
+                            if (suppressAccountClick.current) return
+                            setAccountDraft(accountDraftOf(account))
+                          }}
                         >
                           编辑
                         </button>
-                        <button className="ghost ledger-mini" onClick={() => void archiveAccount(account)}>
+                        <button
+                          className="ghost ledger-mini"
+                          onClick={() => {
+                            if (suppressAccountClick.current) return
+                            void archiveAccount(account)
+                          }}
+                        >
                           {account.archived ? '恢复' : '归档'}
                         </button>
                       </div>
@@ -1122,12 +1565,21 @@ export default function LedgerView(): JSX.Element {
                       <div className="ledger-account-actions">
                         <button
                           className="ghost ledger-mini"
-                          onClick={() => setExpandedAccount(expandedAccount === account.id ? '' : account.id)}
+                          onClick={() => {
+                            if (suppressAccountClick.current) return
+                            setExpandedAccount(expandedAccount === account.id ? '' : account.id)
+                          }}
                         >
                           {expandedAccount === account.id ? '收起流水' : '查看流水'}
                         </button>
                         {flows.length === 0 && (
-                          <button className="ghost ledger-mini" onClick={() => void removeAccount(account)}>
+                          <button
+                            className="ghost ledger-mini"
+                            onClick={() => {
+                              if (suppressAccountClick.current) return
+                              void removeAccount(account)
+                            }}
+                          >
                             删除
                           </button>
                         )}
@@ -1231,7 +1683,7 @@ export default function LedgerView(): JSX.Element {
               <span className="dim">{ratePoint ? `最新 ${ratePoint.date}` : '尚未获取汇率'}</span>
             </div>
             <div className="ledger-setting-note">
-              获取最新汇率时，以央行中间价乘 1.02 计入；手填的数值按原值使用。
+              获取最新汇率时，以央行中间价乘 1.005 计入；手填的数值按原值使用。
             </div>
           </section>
 

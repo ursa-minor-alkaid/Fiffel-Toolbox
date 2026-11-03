@@ -7,6 +7,9 @@ const SCHEMA_VERSION = 1
 const TXN_FILE = 'ledger.txns.json'
 const META_FILE = 'ledger.meta.json'
 const KEEP_SNAPSHOTS = 7
+/** 早期版本经 ctx.storage 写入的文件名，读取时做一次性迁移 */
+const LEGACY_TXN_FILE = 'ledger.ledger.txns.json'
+const LEGACY_META_FILE = 'ledger.ledger.meta.json'
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -102,9 +105,8 @@ function migrateMeta(raw: RawMeta | Meta | null): Meta {
   return {
     schemaVersion: SCHEMA_VERSION,
     settings: { ...base.settings, ...(stored.settings ?? {}) },
-    accounts: Array.isArray(stored.accounts) && stored.accounts.length ? stored.accounts : base.accounts,
-    categories:
-      Array.isArray(stored.categories) && stored.categories.length ? stored.categories : base.categories,
+    accounts: Array.isArray(stored.accounts) ? stored.accounts : base.accounts,
+    categories: Array.isArray(stored.categories) ? stored.categories : base.categories,
     rates: Array.isArray(stored.rates) ? stored.rates : [],
     ratesFetchedAt: typeof stored.ratesFetchedAt === 'number' ? stored.ratesFetchedAt : null
   }
@@ -121,6 +123,7 @@ export class LedgerStore {
   private state: { txns: Txn[]; meta: Meta } | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private recovered = false
+  private migrated = false
 
   constructor(private readonly ctx: PluginContext) {}
 
@@ -160,8 +163,14 @@ export class LedgerStore {
   }
 
   private async readTxns(): Promise<Txn[]> {
-    const primary = await this.readJson<StoredTxns | Txn[]>(this.file(TXN_FILE))
-    if (primary) return migrateTxns(primary)
+    const current = await this.readJson<StoredTxns | Txn[]>(this.file(TXN_FILE))
+    if (current) return migrateTxns(current)
+
+    const legacy = await this.readJson<StoredTxns | Txn[]>(this.file(LEGACY_TXN_FILE))
+    if (legacy) {
+      this.migrated = true
+      return migrateTxns(legacy)
+    }
 
     const backup = await this.readJson<StoredTxns | Txn[]>(`${this.file(TXN_FILE)}.bak`)
     if (backup) {
@@ -180,8 +189,15 @@ export class LedgerStore {
   }
 
   private async readMeta(): Promise<Meta> {
-    const primary = await this.readJson<RawMeta>(this.file(META_FILE))
-    if (primary) return migrateMeta(primary)
+    const current = await this.readJson<RawMeta>(this.file(META_FILE))
+    if (current) return migrateMeta(current)
+
+    const legacy = await this.readJson<RawMeta>(this.file(LEGACY_META_FILE))
+    if (legacy) {
+      this.migrated = true
+      return migrateMeta(legacy)
+    }
+
     const backup = await this.readJson<RawMeta>(`${this.file(META_FILE)}.bak`)
     if (backup) {
       this.recovered = true
@@ -200,15 +216,12 @@ export class LedgerStore {
 
   private async repairMainFiles(state: { txns: Txn[]; meta: Meta }): Promise<void> {
     try {
-      await this.ctx.storage.set('ledger.txns', {
-        schemaVersion: SCHEMA_VERSION,
-        txns: state.txns
-      } satisfies StoredTxns)
+      await this.writeJson(TXN_FILE, { schemaVersion: SCHEMA_VERSION, txns: state.txns } satisfies StoredTxns)
     } catch {
       /* 修复失败时保持只读结果，用户仍可导出 */
     }
     try {
-      await this.ctx.storage.set('ledger.meta', state.meta)
+      await this.writeJson(META_FILE, state.meta)
     } catch {
       /* 同上 */
     }
@@ -218,7 +231,10 @@ export class LedgerStore {
     const state = await this.enqueue(() => this.ensureState())
     const recovered = this.recovered
     this.recovered = false
-    if (recovered) await this.repairMainFiles(state)
+    if (recovered || this.migrated) {
+      await this.repairMainFiles(state)
+      this.migrated = false
+    }
     return { txns: state.txns, meta: state.meta, recovered }
   }
 
@@ -267,31 +283,48 @@ export class LedgerStore {
     }
   }
 
-  private async writeWithRetry(namespace: string, payload: unknown): Promise<void> {
+  /** 原子写入：先写临时文件再改名，避免中途崩溃留下半截 JSON */
+  private async writeJson(name: string, payload: unknown): Promise<void> {
+    const target = this.file(name)
+    const temp = `${target}.tmp`
+    const text = JSON.stringify(payload, null, 2)
+    await fs.mkdir(this.dir(), { recursive: true })
     try {
-      await this.ctx.storage.set(namespace, payload)
-    } catch (first) {
-      await delay(200)
-      await this.ctx.storage.set(namespace, payload)
+      await fs.writeFile(temp, text, 'utf-8')
+      await fs.rename(temp, target)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw err
     }
+    // 杀软或索引服务短暂占用句柄时延迟重试一次
+    await delay(200)
+    await fs.writeFile(temp, text, 'utf-8')
+    await fs.rename(temp, target)
   }
 
   private async persistTxns(txns: Txn[]): Promise<void> {
     await this.backupFile(TXN_FILE)
     await this.snapshotToday(TXN_FILE, localDate())
-    await this.writeWithRetry('ledger.txns', { schemaVersion: SCHEMA_VERSION, txns } satisfies StoredTxns)
+    await this.writeJson(TXN_FILE, { schemaVersion: SCHEMA_VERSION, txns } satisfies StoredTxns)
   }
 
   private async persistMeta(meta: Meta): Promise<void> {
     await this.backupFile(META_FILE)
-    await this.writeWithRetry('ledger.meta', meta)
+    await this.writeJson(META_FILE, meta)
   }
 
   mutateTxns<T>(work: (txns: Txn[], state: { txns: Txn[]; meta: Meta }) => T): Promise<T> {
     return this.enqueue(async () => {
       const state = await this.ensureState()
       const result = work(state.txns, state)
-      await this.persistTxns(state.txns)
+      try {
+        await this.persistTxns(state.txns)
+      } catch (err) {
+        // 写入失败时丢弃内存副本，下次访问重新从磁盘读取，避免界面显示未落盘的改动
+        this.state = null
+        throw err
+      }
       return result
     })
   }
@@ -300,7 +333,12 @@ export class LedgerStore {
     return this.enqueue(async () => {
       const state = await this.ensureState()
       const result = work(state.meta, state)
-      await this.persistMeta(state.meta)
+      try {
+        await this.persistMeta(state.meta)
+      } catch (err) {
+        this.state = null
+        throw err
+      }
       return result
     })
   }
