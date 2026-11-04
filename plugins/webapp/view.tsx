@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type PointerEvent as ReactPointerEvent
+} from 'react'
+import { createPortal } from 'react-dom'
 import { usePlugin, formatSize } from '../../src/renderer/src/utils'
 import { filePathOf } from '../../src/renderer/src/bridge'
 
@@ -64,16 +73,44 @@ export default function WebAppView(): JSX.Element {
   const [status, setStatus] = useState('')
   const [renaming, setRenaming] = useState<WebApp | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [renameHoldsRail, setRenameHoldsRail] = useState(false)
+  const [deleting, setDeleting] = useState<WebApp | null>(null)
+  const [deleteWithData, setDeleteWithData] = useState(false)
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logOpen, setLogOpen] = useState(false)
-  const [dragging, setDragging] = useState(false)
+  const [dragId, setDragId] = useState('')
+  const [dragGhost, setDragGhost] = useState<{
+    app: WebApp
+    left: number
+    top: number
+    width: number
+  } | null>(null)
   const [autoReload, setAutoReload] = useState<boolean>(readAutoReload)
   const [fullscreen, setFullscreen] = useState(false)
-  const [railPinned, setRailPinned] = useState(false)
+  const [railOpen, setRailOpen] = useState(false)
+  const [railSticky, setRailSticky] = useState(false)
   const [immersive, setImmersive] = useState(false)
+  const [menu, setMenu] = useState<{ app: WebApp; x: number; y: number } | null>(null)
   const paneRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
+  const railRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const ghostRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{
+    id: string
+    pointerId: number
+    startX: number
+    startY: number
+    offsetY: number
+    top: number
+    left: number
+    width: number
+    moved: boolean
+  } | null>(null)
+  const dragOrderRef = useRef<string[]>([])
+  const initialOrderRef = useRef('')
+  const suppressClick = useRef(false)
 
   const refresh = useCallback(async (): Promise<void> => {
     const list = await invoke<WebApp[]>('list')
@@ -133,6 +170,29 @@ export default function WebAppView(): JSX.Element {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [immersive])
+
+  useEffect(() => {
+    if (!menu) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menu])
+
+  /** 重命名结束后继续保留边栏，直到鼠标离开边栏区域 */
+  useEffect(() => {
+    if (!railSticky || renaming) return
+    const onMove = (event: PointerEvent): void => {
+      const rail = railRef.current
+      if (!rail) return
+      const target = document.elementFromPoint(event.clientX, event.clientY)
+      if (target && rail.contains(target)) return
+      setRailSticky(false)
+    }
+    window.addEventListener('pointermove', onMove)
+    return () => window.removeEventListener('pointermove', onMove)
+  }, [railSticky, renaming])
 
   /**
    * 在预览容器（iframe 之外）向下滚动进入沉浸模式。
@@ -307,7 +367,6 @@ export default function WebAppView(): JSX.Element {
 
   const handleDrop = async (event: DragEvent<HTMLDivElement>): Promise<void> => {
     event.preventDefault()
-    setDragging(false)
     const file = event.dataTransfer.files?.[0]
     if (!file) return
     if (!/\.html?$/i.test(file.name)) {
@@ -333,14 +392,160 @@ export default function WebAppView(): JSX.Element {
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault()
-    if (!dragging) setDragging(true)
   }
 
-  const removeApp = async (): Promise<void> => {
-    if (!active) return
-    const deleteData = window.confirm(`删除「${active.name}」的登记，并同时清空它的存储数据？\n取消则保留数据。`)
-    const list = await invoke<WebApp[]>('remove', { id: active.id, deleteData })
+  /** 指针越过其余条目中点时切换插入位置 */
+  const moveDragTo = (pointerY: number): void => {
+    const sheet = listRef.current
+    const drag = dragRef.current
+    if (!sheet || !drag) return
+
+    const nodes = Array.from(sheet.querySelectorAll<HTMLElement>('.list-item'))
+    const ids = nodes.map((node) => node.dataset.id ?? '').filter(Boolean)
+    if (ids.length < 2) return
+
+    const others = nodes.filter((node) => node.dataset.id !== drag.id)
+    let insertAt = others.length
+    for (let index = 0; index < others.length; index += 1) {
+      const box = others[index].getBoundingClientRect()
+      if (pointerY < box.top + box.height / 2) {
+        insertAt = index
+        break
+      }
+    }
+
+    const without = ids.filter((id) => id !== drag.id)
+    without.splice(insertAt, 0, drag.id)
+    if (without.join('|') === ids.join('|')) return
+
+    dragOrderRef.current = without
+    setApps((previous) => {
+      const byId = new Map(previous.map((app) => [app.id, app]))
+      return without
+        .map((id) => byId.get(id))
+        .filter((app): app is WebApp => Boolean(app))
+    })
+  }
+
+  const beginItemDrag = (event: ReactPointerEvent<HTMLDivElement>, app: WebApp): void => {
+    if (event.button !== 0) return
+    const item = event.currentTarget
+    const rect = item.getBoundingClientRect()
+    const drag = {
+      id: app.id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetY: event.clientY - rect.top,
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      moved: false
+    }
+    dragRef.current = drag
+    dragOrderRef.current = apps.map((entry) => entry.id)
+    initialOrderRef.current = dragOrderRef.current.join('|')
+
+    let lastY = event.clientY
+    let frame = 0
+
+    // 指针贴近列表上下边缘时持续滚动
+    const autoScroll = (): void => {
+      const sheet = listRef.current
+      if (!sheet || !dragRef.current) return
+      const box = sheet.getBoundingClientRect()
+      const edge = 30
+      let delta = 0
+      if (lastY < box.top + edge) delta = -Math.ceil((box.top + edge - lastY) / 4)
+      else if (lastY > box.bottom - edge) delta = Math.ceil((lastY - box.bottom + edge) / 4)
+      if (delta !== 0) {
+        sheet.scrollTop += delta
+        moveDragTo(lastY)
+      }
+      frame = requestAnimationFrame(autoScroll)
+    }
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId !== drag.pointerId) return
+      const current = dragRef.current
+      if (!current) return
+      lastY = moveEvent.clientY
+      if (!current.moved) {
+        const far =
+          Math.abs(moveEvent.clientY - current.startY) >= 4 ||
+          Math.abs(moveEvent.clientX - current.startX) >= 4
+        if (!far) return
+        current.moved = true
+        suppressClick.current = true
+        setDragId(current.id)
+        setDragGhost({
+          app,
+          left: current.left,
+          top: current.top,
+          width: current.width
+        })
+        requestAnimationFrame(() => {
+          const active = dragRef.current
+          const ghost = ghostRef.current
+          if (ghost && active) {
+            ghost.style.setProperty('--drag-y', `${lastY - active.offsetY - active.top}px`)
+          }
+        })
+        frame = requestAnimationFrame(autoScroll)
+      }
+      moveEvent.preventDefault()
+      const ghost = ghostRef.current
+      if (ghost) {
+        ghost.style.setProperty('--drag-y', `${moveEvent.clientY - current.offsetY - current.top}px`)
+      }
+      moveDragTo(moveEvent.clientY)
+    }
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('blur', finish)
+      if (frame) cancelAnimationFrame(frame)
+      const current = dragRef.current
+      dragRef.current = null
+      setDragId('')
+      setDragGhost(null)
+      if (!current?.moved) return
+      setRailSticky(true)
+
+      window.setTimeout(() => {
+        suppressClick.current = false
+      }, 0)
+
+      if (dragOrderRef.current.join('|') !== initialOrderRef.current) {
+        void invoke<WebApp[]>('reorder', { ids: dragOrderRef.current })
+          .then((list) => setApps(list))
+          .catch(() => undefined)
+      }
+    }
+
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    window.addEventListener('blur', finish)
+  }
+
+  const requestRemove = (target?: WebApp): void => {
+    const app = target ?? active
+    if (!app) return
+    setMenu(null)
+    setDeleteWithData(false)
+    setDeleting(app)
+  }
+
+  const confirmRemove = async (): Promise<void> => {
+    if (!deleting) return
+    const app = deleting
+    setDeleting(null)
+    const list = await invoke<WebApp[]>('remove', { id: app.id, deleteData: deleteWithData })
     setApps(list)
+    setActiveId((current) => (current === app.id ? (list[0]?.id ?? '') : current))
     void refreshStorage()
     setStatus('已移除登记')
   }
@@ -406,11 +611,25 @@ export default function WebAppView(): JSX.Element {
     }
   }
 
+  const openRename = (app: WebApp, holdRail = false): void => {
+    setRenameHoldsRail(holdRail)
+    if (holdRail) setRailSticky(true)
+    setRenaming(app)
+    setRenameDraft(app.name)
+  }
+
+  const closeRename = (): void => {
+    setRenaming(null)
+    setRenameHoldsRail(false)
+  }
+
   const commitRename = async (): Promise<void> => {
     if (!renaming) return
     const list = await invoke<WebApp[]>('rename', { id: renaming.id, name: renameDraft })
     setApps(list)
-    setRenaming(null)
+    const renamed = list.find((app) => app.id === renaming.id)
+    if (renamed) setStatus(`已重命名为：${renamed.name}`)
+    closeRename()
   }
 
   const dataKeys = Object.keys(data)
@@ -453,37 +672,49 @@ export default function WebAppView(): JSX.Element {
 
       <div className="panes webapp-stage">
         <div
-          className={`app-rail${railPinned ? ' is-pinned' : ''}`}
+          ref={railRef}
+          className={`app-rail${railOpen || railSticky || menu || dragId || (renaming && renameHoldsRail) ? ' is-open' : ''}`}
+          onMouseLeave={() => {
+            setRailOpen(false)
+            if (!renaming) setRailSticky(false)
+          }}
           onDragOver={handleDragOver}
-          onDragLeave={() => setDragging(false)}
           onDrop={(event) => void handleDrop(event)}
         >
           <button
             type="button"
             className="app-rail-trigger"
             title={`已登记 ${apps.length} 个页面`}
-            aria-expanded={railPinned}
-            onClick={() => setRailPinned((value) => !value)}
+            aria-expanded={railOpen || railSticky || menu !== null}
+            onClick={() => {
+              setRailSticky(false)
+              setRailOpen((value) => !value)
+            }}
           >
             <span className="app-rail-label">已登记</span>
             <span className="app-rail-count">{apps.length}</span>
           </button>
 
           <div className="app-rail-flyout">
-            <div className="app-rail-sheet">
+            <div className="app-rail-sheet" ref={listRef}>
               <div className="list-pane-head">
                 <span className="dim">已登记 {apps.length} 个页面</span>
-              </div>
-              <div className={`drop-zone${dragging ? ' active' : ''}`}>
-                拖入 .html 文件即可登记
               </div>
               {apps.map((app) => (
                 <div
                   key={app.id}
-                  className={`list-item${app.id === activeId ? ' active' : ''}`}
+                  data-id={app.id}
+                  className={`list-item${app.id === activeId ? ' active' : ''}${app.id === dragId ? ' is-dragging' : ''}`}
+                  onPointerDown={(event) => beginItemDrag(event, app)}
                   onClick={() => {
+                    if (suppressClick.current) return
                     setActiveId(app.id)
-                    setRailPinned(false)
+                    setRailOpen(false)
+                    setRailSticky(false)
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    setMenu({ app, x: event.clientX, y: event.clientY })
                   }}
                 >
                   <div className="list-item-title">
@@ -506,7 +737,6 @@ export default function WebAppView(): JSX.Element {
           className="webapp-pane"
           ref={paneRef}
           onDragOver={handleDragOver}
-          onDragLeave={() => setDragging(false)}
           onDrop={(event) => void handleDrop(event)}
         >
           {active ? (
@@ -529,13 +759,7 @@ export default function WebAppView(): JSX.Element {
                 <button className="ghost" onClick={() => void toggleFullscreen()}>
                   {fullscreen ? '退出全屏' : '全屏'}
                 </button>
-                <button
-                  className="ghost"
-                  onClick={() => {
-                    setRenaming(active)
-                    setRenameDraft(active.name)
-                  }}
-                >
+                <button className="ghost" onClick={() => openRename(active)}>
                   重命名
                 </button>
                 <button className="ghost" onClick={() => void invoke('reveal', { id: active.id })}>
@@ -547,7 +771,7 @@ export default function WebAppView(): JSX.Element {
                 <button className="ghost" onClick={() => void clearData()}>
                   清空数据
                 </button>
-                <button className="ghost" onClick={() => void removeApp()}>
+                <button className="ghost" onClick={() => requestRemove()}>
                   移除
                 </button>
               </div>
@@ -645,8 +869,68 @@ export default function WebAppView(): JSX.Element {
         </button>
       )}
 
+      {menu &&
+        createPortal(
+          <>
+            <div
+              className="menu-backdrop"
+              onClick={() => setMenu(null)}
+              onContextMenu={(event) => event.preventDefault()}
+            />
+            <div
+              className="context-menu"
+              style={{
+                left: Math.max(8, Math.min(menu.x, window.innerWidth - 180)),
+                top: Math.max(8, Math.min(menu.y, window.innerHeight - 96))
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <button
+                className="ghost"
+                onClick={() => {
+                  openRename(menu.app, true)
+                  setMenu(null)
+                }}
+              >
+                重命名
+              </button>
+              <button className="ghost" onClick={() => requestRemove(menu.app)}>
+                删除
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
+
+      {dragId && createPortal(<div className="app-drag-layer" />, document.body)}
+
+      {dragGhost &&
+        createPortal(
+          <div
+            ref={ghostRef}
+            className="list-item app-drag-ghost"
+            style={{
+              left: dragGhost.left,
+              top: dragGhost.top,
+              width: dragGhost.width,
+              transform: 'translate3d(0, var(--drag-y), 0)'
+            }}
+          >
+            <div className="list-item-title">
+              {dragGhost.app.name}
+              {dragGhost.app.missing ? (
+                <span className="tag" style={{ marginLeft: 6 }}>
+                  文件缺失
+                </span>
+              ) : null}
+            </div>
+            <div className="list-item-sub">{dragGhost.app.dir}</div>
+          </div>,
+          document.body
+        )}
+
       {renaming && (
-        <div className="modal-backdrop" onClick={() => setRenaming(null)}>
+        <div className="modal-backdrop" onClick={closeRename}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-title">重命名</div>
             <input
@@ -658,11 +942,38 @@ export default function WebAppView(): JSX.Element {
               }}
             />
             <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
-              <button className="ghost" onClick={() => setRenaming(null)}>
+              <button className="ghost" onClick={closeRename}>
                 取消
               </button>
               <button className="primary" onClick={() => void commitRename()}>
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleting && (
+        <div className="modal-backdrop" onClick={() => setDeleting(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">删除登记</div>
+            <div className="dim" style={{ lineHeight: 1.7 }}>
+              确定删除「{deleting.name}」的登记？
+            </div>
+            <label className="row" style={{ marginTop: 12, gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={deleteWithData}
+                onChange={(event) => setDeleteWithData(event.target.checked)}
+              />
+              <span className="dim">同时清空该页面的存储数据</span>
+            </label>
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+              <button className="ghost" onClick={() => setDeleting(null)}>
+                取消
+              </button>
+              <button className="primary" onClick={() => void confirmRemove()}>
+                删除
               </button>
             </div>
           </div>

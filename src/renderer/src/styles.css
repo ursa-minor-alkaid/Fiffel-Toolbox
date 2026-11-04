@@ -1498,8 +1498,7 @@ button.app-rail-trigger:focus-visible {
 }
 
 .app-rail:hover .app-rail-flyout,
-.app-rail:focus-within .app-rail-flyout,
-.app-rail.is-pinned .app-rail-flyout {
+.app-rail.is-open .app-rail-flyout {
   opacity: 1;
   visibility: visible;
   transform: none;
@@ -1524,6 +1523,34 @@ button.app-rail-trigger:focus-visible {
 .app-rail-sheet .list-item {
   padding-top: 11px;
   padding-bottom: 11px;
+}
+
+.app-rail-sheet {
+  user-select: none;
+}
+
+.list-item.is-dragging {
+  visibility: hidden;
+}
+
+.app-drag-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  cursor: grabbing;
+}
+
+.app-drag-ghost {
+  --drag-y: 0px;
+  position: fixed;
+  z-index: 40;
+  cursor: grabbing;
+  pointer-events: none;
+  background: var(--panel);
+  border: var(--bd) solid var(--cyan-deep);
+  box-shadow: var(--overlay-shadow);
+  animation: none;
+  will-change: transform;
 }
 
 .webapp-pane {
@@ -1632,24 +1659,6 @@ button.ghost.is-on {
   color: var(--green);
   border-color: var(--cyan-deep);
   background: var(--panel-2);
-}
-
-.drop-zone {
-  margin: 7px;
-  padding: 8px 10px;
-  border: var(--bd) dashed var(--cyan-deep);
-  color: var(--muted);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-align: center;
-  transition:
-    border-color 0.12s linear,
-    color 0.12s linear;
-}
-
-.drop-zone.active {
-  border-color: var(--pink);
-  color: var(--pink-hot);
 }
 
 .console-bar {

@@ -499,6 +499,30 @@ const mod: PluginMainModule = {
       return readApps(ctx)
     },
 
+    /** 按前端拖拽后的顺序重排登记列表 */
+    async reorder(args, ctx): Promise<WebApp[]> {
+      const { ids } = (args ?? {}) as { ids?: string[] }
+      const apps = await readApps(ctx)
+      const byId = new Map(apps.map((app) => [app.id, app]))
+      const next: Omit<WebApp, 'missing'>[] = []
+
+      for (const id of Array.isArray(ids) ? ids : []) {
+        const app = byId.get(id)
+        if (!app) continue
+        const { missing, ...rest } = app
+        next.push(rest)
+        byId.delete(id)
+      }
+
+      for (const app of byId.values()) {
+        const { missing, ...rest } = app
+        next.push(rest)
+      }
+
+      await ctx.storage.set(APP_NAMESPACE, next)
+      return readApps(ctx)
+    },
+
     async remove(args, ctx): Promise<WebApp[]> {
       const { id, deleteData = false } = (args ?? {}) as { id: string; deleteData?: boolean }
       const apps = await readApps(ctx)
