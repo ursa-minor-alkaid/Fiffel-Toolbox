@@ -19,6 +19,8 @@ export interface Account {
   initial: Partial<Record<Currency, number>>
   archived: boolean
   order: number
+  /** 已删除的账户仅保留名称供历史流水引用，不再出现在账户页与选择器 */
+  deleted?: boolean
 }
 
 export interface Category {

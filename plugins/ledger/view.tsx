@@ -66,6 +66,20 @@ const messageOf = (err: unknown): string => {
   return text.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 }
 
+interface ImportPreview {
+  path: string
+  exportedAt: string
+  txnCount: number
+  accountCount: number
+  categoryCount: number
+}
+
+const importTimeLabel = (value: string): string => {
+  if (!value) return '未记录'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+}
+
 export default function LedgerView(): JSX.Element {
   const { invoke } = usePlugin('ledger')
   const amountRef = useRef<HTMLInputElement | null>(null)
@@ -106,7 +120,8 @@ export default function LedgerView(): JSX.Element {
   undoRef.current = undoState
 
   const [accountDraft, setAccountDraft] = useState<AccountDraft | null>(null)
-  const [expandedAccount, setExpandedAccount] = useState('')
+  const [deletingAccount, setDeletingAccount] = useState<Account | null>(null)
+  const [flowsAccount, setFlowsAccount] = useState<Account | null>(null)
   const [dragAccountId, setDragAccountId] = useState('')
   const accountGridRef = useRef<HTMLDivElement | null>(null)
   const accountDragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null)
@@ -116,6 +131,8 @@ export default function LedgerView(): JSX.Element {
   const [rateEUR, setRateEUR] = useState('')
   const [rateUSD, setRateUSD] = useState('')
   const [rateGBP, setRateGBP] = useState('')
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
 
   const flash = (text: string, isError = false): void => {
     setStatus(text)
@@ -132,7 +149,7 @@ export default function LedgerView(): JSX.Element {
       if (!alive) return
       apply(loaded)
       const settings = loaded.meta.settings
-      const active = loaded.meta.accounts.filter((item) => !item.archived)
+      const active = loaded.meta.accounts.filter((item) => !item.archived && !item.deleted)
       setAccountId(settings.defaultAccountId || active[0]?.id || '')
       setCurrency(settings.lastCurrency)
       setCategoryId(settings.lastCategoryId)
@@ -163,7 +180,10 @@ export default function LedgerView(): JSX.Element {
   const meta = data?.meta
   const txns = data?.txns ?? []
 
-  const accounts = useMemo(() => (meta ? [...meta.accounts].sort((a, b) => a.order - b.order) : []), [meta])
+  const accounts = useMemo(
+    () => (meta ? meta.accounts.filter((item) => !item.deleted).sort((a, b) => a.order - b.order) : []),
+    [meta]
+  )
   const activeAccounts = useMemo(() => accounts.filter((item) => !item.archived), [accounts])
   const range = useMemo(() => rangeFor(period, from, to), [period, from, to])
 
@@ -202,6 +222,14 @@ export default function LedgerView(): JSX.Element {
         items: items.sort((a, b) => b.createdAt - a.createdAt)
       }))
   }, [visible])
+
+  /** 查看流水弹窗使用完整流水，按日期与创建时间倒序 */
+  const flowsAccountTxns = useMemo(() => {
+    if (!flowsAccount) return []
+    return txns
+      .filter((txn) => txn.accountId === flowsAccount.id || txn.toAccountId === flowsAccount.id)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt))
+  }, [txns, flowsAccount])
 
   const typeCategories = useMemo(() => {
     if (!meta) return []
@@ -588,6 +616,43 @@ export default function LedgerView(): JSX.Element {
     }
   }
 
+  const pickImport = async (): Promise<void> => {
+    try {
+      const result = await invoke<ImportPreview | null>('pickImport')
+      setImportPreview(result)
+      if (result) flash('请核对备份内容后确认恢复')
+    } catch (err) {
+      flash(messageOf(err), true)
+    }
+  }
+
+  const confirmImport = async (): Promise<void> => {
+    const preview = importPreview
+    if (!preview || importBusy) return
+    setImportBusy(true)
+    try {
+      const result = await invoke<{ txnCount: number; safetyPath: string }>('importBackup', {
+        path: preview.path
+      })
+      const reloaded = await invoke<LedgerData>('load')
+      apply(reloaded)
+      const settings = reloaded.meta.settings
+      const active = reloaded.meta.accounts.filter((item) => !item.archived && !item.deleted)
+      setAccountId(settings.defaultAccountId || active[0]?.id || '')
+      setCurrency(settings.lastCurrency)
+      setCategoryId(settings.lastCategoryId)
+      setToCurrency(settings.lastCurrency)
+      setFilterAccount('')
+      setUndoState(null)
+      setImportPreview(null)
+      flash(`已恢复 ${result.txnCount} 条记录，导入前数据另存于 ${result.safetyPath}`)
+    } catch (err) {
+      flash(messageOf(err), true)
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   const exportData = async (format: 'csv' | 'md' | 'xlsx'): Promise<void> => {
     try {
       const result = await invoke<{ path: string | null; count: number }>('export', {
@@ -693,15 +758,32 @@ export default function LedgerView(): JSX.Element {
       const fallback = accounts.find((item) => item.id !== account.id && !item.archived)
       if (accountId === account.id) setAccountId(fallback?.id ?? '')
       if (toAccountId === account.id) setToAccountId(fallback?.id ?? '')
+      if (accountDraft?.id === account.id) setAccountDraft(null)
+      if (flowsAccount?.id === account.id) setFlowsAccount(null)
       setData((prev) =>
         prev
-          ? { ...prev, meta: { ...prev.meta, accounts: prev.meta.accounts.filter((item) => item.id !== account.id) } }
+          ? {
+              ...prev,
+              meta: {
+                ...prev.meta,
+                accounts: prev.meta.accounts.map((item) =>
+                  item.id === account.id ? { ...item, deleted: true } : item
+                )
+              }
+            }
           : prev
       )
-      flash('账户已删除')
+      flash('账户已删除，历史流水保持不变')
     } catch (err) {
       flash(messageOf(err), true)
     }
+  }
+
+  const confirmRemoveAccount = async (): Promise<void> => {
+    const account = deletingAccount
+    if (!account) return
+    setDeletingAccount(null)
+    await removeAccount(account)
   }
 
   const cycleCurrency = (value: Currency): void => {
@@ -1459,10 +1541,6 @@ export default function LedgerView(): JSX.Element {
             {accounts.map((account) => {
               const editing = accountDraft?.id === account.id
               const total = accountTotal(txns, account, meta)
-              const flows = txns
-                .filter((txn) => txn.accountId === account.id || txn.toAccountId === account.id)
-                .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt))
-                .slice(0, 8)
               return (
                 <div
                   key={account.id}
@@ -1567,54 +1645,102 @@ export default function LedgerView(): JSX.Element {
                           className="ghost ledger-mini"
                           onClick={() => {
                             if (suppressAccountClick.current) return
-                            setExpandedAccount(expandedAccount === account.id ? '' : account.id)
+                            setFlowsAccount(account)
                           }}
                         >
-                          {expandedAccount === account.id ? '收起流水' : '查看流水'}
+                          查看流水
                         </button>
-                        {flows.length === 0 && (
-                          <button
-                            className="ghost ledger-mini"
-                            onClick={() => {
-                              if (suppressAccountClick.current) return
-                              void removeAccount(account)
-                            }}
-                          >
-                            删除
-                          </button>
-                        )}
+                        <button
+                          className="ghost ledger-mini"
+                          onClick={() => {
+                            if (suppressAccountClick.current) return
+                            setDeletingAccount(account)
+                          }}
+                        >
+                          删除
+                        </button>
                       </div>
-                      {expandedAccount === account.id && (
-                        <div className="ledger-account-flows">
-                          {flows.length === 0 && <span className="dim">该账户暂无流水</span>}
-                          {flows.map((txn) => {
-                            const delta = accountDelta(txn, account.id)
-                            if (!delta) return null
-                            const label = categoryLabel(meta.categories, txn.categoryId)
-                            return (
-                              <div key={txn.id} className="ledger-flow-line">
-                                <span>{txn.date.slice(5)}</span>
-                                <span>
-                                  {txn.type === 'transfer'
-                                    ? txn.toAccountId === account.id
-                                      ? '转入'
-                                      : '转出'
-                                    : label?.full ?? '未分类'}
-                                </span>
-                                <span className={delta.cents >= 0 ? 'is-income' : 'is-expense'}>
-                                  {formatMoney(delta.cents, delta.currency, true)}
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
+
                     </>
                   )}
                 </div>
               )
             })}
           </div>
+
+          <div className="ledger-accounts-note">
+            账户只记录存款和活期、大额定期（视作存款）；投资内容不包含在内
+          </div>
+
+          {flowsAccount && (
+            <div className="modal-backdrop" onClick={() => setFlowsAccount(null)}>
+              <div
+                className="modal ledger-flows-modal"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="modal-title">账户流水</div>
+                <div className="ledger-flows-head">
+                  <b>{flowsAccount.name}</b>
+                  <span className="dim">
+                    {ACCOUNT_TYPES[flowsAccount.type]} · {flowsAccountTxns.length} 笔
+                  </span>
+                </div>
+                <div className="ledger-flows-scroll">
+                  {flowsAccountTxns.length === 0 ? (
+                    <div className="ledger-flows-empty">该账户暂无流水</div>
+                  ) : (
+                    flowsAccountTxns.map((txn) => {
+                      const delta = accountDelta(txn, flowsAccount.id)
+                      if (!delta) return null
+                      const label = categoryLabel(meta.categories, txn.categoryId)
+                      return (
+                        <div key={txn.id} className="ledger-flow-line">
+                          <span>{txn.date.slice(5)}</span>
+                          <span>
+                            {txn.type === 'transfer'
+                              ? txn.toAccountId === flowsAccount.id
+                                ? '转入'
+                                : '转出'
+                              : label?.full ?? '未分类'}
+                          </span>
+                          <span className={delta.cents >= 0 ? 'is-income' : 'is-expense'}>
+                            {formatMoney(delta.cents, delta.currency, true)}
+                          </span>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+                <div className="ledger-confirm-actions">
+                  <button className="ghost" onClick={() => setFlowsAccount(null)}>
+                    关闭
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {deletingAccount && (
+            <div className="modal-backdrop" onClick={() => setDeletingAccount(null)}>
+              <div className="modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-title">删除账户</div>
+                <div className="ledger-confirm-text">
+                  确定删除「{deletingAccount.name}」？账户会从账户页与录入选择中移除，删除后无法恢复。
+                </div>
+                <div className="ledger-confirm-note">
+                  已有流水会全部保留，历史记录仍显示原账户名称，金额、分类与撤销操作不受影响。
+                </div>
+                <div className="ledger-confirm-actions">
+                  <button className="ghost" onClick={() => setDeletingAccount(null)}>
+                    取消
+                  </button>
+                  <button className="ledger-danger" onClick={() => void confirmRemoveAccount()}>
+                    删除
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -1692,7 +1818,33 @@ export default function LedgerView(): JSX.Element {
             <div className="ledger-setting-row">
               <button onClick={() => void openDataFolder()}>打开本地数据文件夹</button>
               <button onClick={() => void backup()}>导出整库 JSON</button>
+              <button onClick={() => void pickImport()}>从 JSON 导入恢复</button>
             </div>
+            {importPreview && (
+              <div className="ledger-import-confirm">
+                <div className="ledger-import-title">将用备份覆盖当前账本</div>
+                <div className="ledger-import-file">{importPreview.path}</div>
+                <div className="ledger-import-stats">
+                  记录 {importPreview.txnCount} 条　账户 {importPreview.accountCount} 个　分类 {importPreview.categoryCount} 个　导出时间{' '}
+                  {importTimeLabel(importPreview.exportedAt)}
+                </div>
+                <div className="ledger-import-warn">
+                  恢复会替换当前的流水、账户、分类、汇率与设置。执行前会自动把现有数据另存到本地数据文件夹。
+                </div>
+                <div className="ledger-setting-row">
+                  <button className="primary" disabled={importBusy} onClick={() => void confirmImport()}>
+                    {importBusy ? '正在恢复…' : '确认恢复'}
+                  </button>
+                  <button
+                    className="ghost"
+                    disabled={importBusy}
+                    onClick={() => setImportPreview(null)}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="ledger-setting-note">
               数据保存在 %APPDATA%\Fiffel\data，包含 ledger.txns.json、ledger.meta.json，每次写入前保留 .bak 与当日快照。
             </div>

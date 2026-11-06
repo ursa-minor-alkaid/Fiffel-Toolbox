@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import * as XLSX from 'xlsx'
 import type { PluginContext, PluginMainModule } from '../../src/shared/types'
-import { LedgerStore } from './store'
+import { LedgerStore, defaultMeta } from './store'
 import {
   CURRENCY_META,
   CURRENCIES,
@@ -23,6 +23,7 @@ import type {
   ExportRequest,
   Meta,
   RatePoint,
+  Settings,
   Txn,
   TxnType,
   LedgerData
@@ -400,6 +401,259 @@ function buildBalanceSheet(
   return rows
 }
 
+interface ImportPreview {
+  path: string
+  exportedAt: string
+  txnCount: number
+  accountCount: number
+  categoryCount: number
+}
+
+interface ImportResult {
+  txnCount: number
+  safetyPath: string
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value)
+
+const isCurrency = (value: unknown): value is Currency =>
+  typeof value === 'string' && (CURRENCIES as string[]).includes(value)
+
+const ACCOUNT_TYPE_NAMES: string[] = ['cash', 'bank', 'ewallet', 'credit']
+
+const isAccountType = (value: unknown): value is Account['type'] =>
+  typeof value === 'string' && ACCOUNT_TYPE_NAMES.includes(value)
+
+const isTxnType = (value: unknown): value is TxnType =>
+  value === 'expense' || value === 'income' || value === 'transfer'
+
+function uniqueById<T extends { id: string }>(list: T[]): T[] {
+  const seen = new Set<string>()
+  return list.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+}
+
+function normalizeInitial(raw: unknown): Partial<Record<Currency, number>> {
+  const initial: Partial<Record<Currency, number>> = {}
+  if (!isRecord(raw)) return initial
+  for (const currency of CURRENCIES) {
+    const value = raw[currency]
+    if (isNumber(value)) initial[currency] = Math.round(value)
+  }
+  return initial
+}
+
+function normalizeAccounts(raw: unknown): Account[] {
+  if (!Array.isArray(raw)) return []
+  const list: Account[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    const name = typeof item.name === 'string' ? item.name.trim() : ''
+    if (!id || !name) continue
+    list.push({
+      id,
+      name,
+      type: isAccountType(item.type) ? item.type : 'cash',
+      initial: normalizeInitial(item.initial),
+      archived: Boolean(item.archived),
+      order: isNumber(item.order) ? item.order : list.length,
+      deleted: Boolean(item.deleted)
+    })
+  }
+  return uniqueById(list)
+}
+
+function normalizeCategories(raw: unknown): Category[] {
+  if (!Array.isArray(raw)) return []
+  const list: Category[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    const name = typeof item.name === 'string' ? item.name.trim() : ''
+    if (!id || !name) continue
+    list.push({
+      id,
+      name,
+      parentId: typeof item.parentId === 'string' && item.parentId ? item.parentId : null,
+      type: item.type === 'income' ? 'income' : 'expense',
+      order: isNumber(item.order) ? item.order : list.length,
+      archived: Boolean(item.archived)
+    })
+  }
+  const categories = uniqueById(list)
+  const ids = new Set(categories.map((item) => item.id))
+  for (const category of categories) {
+    if (category.parentId && !ids.has(category.parentId)) category.parentId = null
+  }
+  return categories
+}
+
+function normalizeRates(raw: unknown): RatePoint[] {
+  if (!Array.isArray(raw)) return []
+  const list: RatePoint[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const date = typeof item.date === 'string' ? item.date : ''
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    const map: Partial<Record<Currency, number>> = {}
+    if (isRecord(item.map)) {
+      for (const currency of CURRENCIES) {
+        const value = item.map[currency]
+        if (isNumber(value) && value > 0) map[currency] = value
+      }
+    }
+    list.push({ date, map })
+  }
+  return [...list].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 30)
+}
+
+function normalizeSettings(raw: unknown, accounts: Account[], categories: Category[]): Settings {
+  const base = defaultMeta().settings
+  const liveAccounts = accounts.filter((item) => !item.deleted)
+  const fallbackAccount =
+    liveAccounts.find((item) => !item.archived)?.id ?? liveAccounts[0]?.id ?? ''
+  const fallbackCategory = categories.find((item) => !item.archived)?.id ?? categories[0]?.id ?? ''
+  if (!isRecord(raw)) {
+    return { ...base, defaultAccountId: fallbackAccount, lastCategoryId: fallbackCategory }
+  }
+  const defaultAccountId =
+    typeof raw.defaultAccountId === 'string' &&
+    liveAccounts.some((item) => item.id === raw.defaultAccountId)
+      ? raw.defaultAccountId
+      : fallbackAccount
+  const lastCategoryId =
+    typeof raw.lastCategoryId === 'string' && categories.some((item) => item.id === raw.lastCategoryId)
+      ? raw.lastCategoryId
+      : fallbackCategory
+  return {
+    baseCurrency: isCurrency(raw.baseCurrency) ? raw.baseCurrency : base.baseCurrency,
+    defaultAccountId,
+    lastCategoryId,
+    lastCurrency: isCurrency(raw.lastCurrency) ? raw.lastCurrency : base.lastCurrency,
+    rateUpdatedAt: isNumber(raw.rateUpdatedAt) ? raw.rateUpdatedAt : null
+  }
+}
+
+function normalizeTxns(raw: unknown): Txn[] {
+  if (!Array.isArray(raw)) return []
+  const list: Txn[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    const accountId = typeof item.accountId === 'string' ? item.accountId : ''
+    const date = typeof item.date === 'string' ? item.date : ''
+    if (!id || !accountId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    if (!isTxnType(item.type) || !isCurrency(item.currency)) continue
+    if (!isNumber(item.amount) || item.amount <= 0) continue
+    const currency = item.currency
+    const amount = Math.round(item.amount)
+    const rateToBase =
+      isNumber(item.rateToBase) && item.rateToBase > 0
+        ? item.rateToBase
+        : currency === 'CNY'
+          ? 1
+          : 0
+    const txn: Txn = {
+      id,
+      type: item.type,
+      date,
+      createdAt: isNumber(item.createdAt) ? item.createdAt : 0,
+      amount,
+      currency,
+      accountId,
+      categoryId: typeof item.categoryId === 'string' && item.categoryId ? item.categoryId : null,
+      note: typeof item.note === 'string' ? item.note : '',
+      tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      rateToBase,
+      baseAmount: isNumber(item.baseAmount) ? Math.round(item.baseAmount) : 0,
+      reimbursable: Boolean(item.reimbursable),
+      excludeFromStats: Boolean(item.excludeFromStats)
+    }
+    if (txn.type === 'transfer') {
+      const toAccountId = typeof item.toAccountId === 'string' ? item.toAccountId : ''
+      if (!toAccountId) continue
+      const toCurrency = isCurrency(item.toCurrency) ? item.toCurrency : currency
+      const toAmount = isNumber(item.toAmount) && item.toAmount > 0 ? Math.round(item.toAmount) : amount
+      txn.toAccountId = toAccountId
+      txn.toCurrency = toCurrency
+      txn.toAmount = toAmount
+      txn.fxRate = isNumber(item.fxRate) && item.fxRate > 0 ? item.fxRate : toAmount / amount
+    }
+    list.push(txn)
+  }
+  return uniqueById(list)
+}
+
+/** 解析整库备份，字段缺失或类型异常时只保留可用数据 */
+function parseBackup(raw: unknown): { txns: Txn[]; meta: Meta; exportedAt: string } {
+  if (!isRecord(raw)) throw new Error('文件内容不是 JSON 对象')
+  if (!Array.isArray(raw.txns) || !isRecord(raw.meta)) {
+    throw new Error('缺少 txns 或 meta 字段，请选择「导出整库 JSON」生成的文件')
+  }
+  const accounts = normalizeAccounts(raw.meta.accounts)
+  const categories = normalizeCategories(raw.meta.categories)
+  const meta: Meta = {
+    schemaVersion: 1,
+    settings: normalizeSettings(raw.meta.settings, accounts, categories),
+    accounts,
+    categories,
+    rates: normalizeRates(raw.meta.rates),
+    ratesFetchedAt: isNumber(raw.meta.ratesFetchedAt) ? raw.meta.ratesFetchedAt : null
+  }
+  return {
+    txns: normalizeTxns(raw.txns),
+    meta,
+    exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt : ''
+  }
+}
+
+async function readBackup(source: string): Promise<{ txns: Txn[]; meta: Meta; exportedAt: string }> {
+  let text: string
+  try {
+    text = await fs.readFile(source, 'utf-8')
+  } catch {
+    throw new Error('无法读取所选文件，请确认文件仍然存在')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('文件不是有效的 JSON')
+  }
+  return parseBackup(parsed)
+}
+
+const KEEP_IMPORT_BACKUPS = 7
+
+/** 导入前另存当前整库，误导入时可从该文件恢复 */
+async function writeBeforeImportBackup(ctx: PluginContext, txns: Txn[], meta: Meta): Promise<string> {
+  const dir = path.join(ctx.userDataPath, 'data')
+  await fs.mkdir(dir, { recursive: true })
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const target = path.join(dir, `ledger.before-import.${stamp}.json`)
+  await fs.writeFile(target, JSON.stringify({ exportedAt: new Date().toISOString(), txns, meta }, null, 2), 'utf-8')
+  try {
+    const names = (await fs.readdir(dir))
+      .filter((name) => /^ledger\.before-import\..+\.json$/.test(name))
+      .sort()
+      .reverse()
+    for (const name of names.slice(KEEP_IMPORT_BACKUPS)) {
+      await fs.unlink(path.join(dir, name))
+    }
+  } catch {
+    /* 清理失败不影响导入 */
+  }
+  return target
+}
+
 const handlers: PluginMainModule['handlers'] = {
   async load(_args, ctx): Promise<LedgerData> {
     return db(ctx).load()
@@ -537,12 +791,15 @@ const handlers: PluginMainModule['handlers'] = {
     const { id } = args as { id: string }
     const ledger = db(ctx)
     const state = await ledger.snapshotState()
-    const used = state.txns.some((txn) => txn.accountId === id || txn.toAccountId === id)
-    if (used) return { ok: false, reason: '该账户已有流水，只能归档' }
+    const target = state.meta.accounts.find((item) => item.id === id)
+    if (!target || target.deleted) return { ok: false, reason: '账户不存在' }
+    // 软删除：保留账户记录供历史流水引用，仅从界面与选择器中隐藏
     await ledger.mutateMeta((meta) => {
-      meta.accounts = meta.accounts.filter((item) => item.id !== id)
+      const account = meta.accounts.find((item) => item.id === id)
+      if (account) account.deleted = true
       if (meta.settings.defaultAccountId === id) {
-        meta.settings.defaultAccountId = meta.accounts[0]?.id ?? ''
+        const fallback = meta.accounts.find((item) => item.id !== id && !item.deleted)
+        meta.settings.defaultAccountId = fallback?.id ?? ''
       }
     })
     return { ok: true }
@@ -712,6 +969,32 @@ const handlers: PluginMainModule['handlers'] = {
       [{ name: 'JSON', extensions: ['json'] }]
     )
     return { path: saved }
+  },
+
+  /** 选择并预检备份文件，不写入任何数据 */
+  async pickImport(_args, ctx): Promise<ImportPreview | null> {
+    const picked = await ctx.pickFile([{ name: 'JSON', extensions: ['json'] }])
+    if (!picked) return null
+    const backup = await readBackup(picked)
+    return {
+      path: picked,
+      exportedAt: backup.exportedAt,
+      txnCount: backup.txns.length,
+      accountCount: backup.meta.accounts.length,
+      categoryCount: backup.meta.categories.length
+    }
+  },
+
+  /** 导入恢复：先另存当前整库，再用备份内容整体替换 */
+  async importBackup(args, ctx): Promise<ImportResult> {
+    const { path: source } = args as { path?: string }
+    if (!source) throw new Error('缺少导入文件路径')
+    const backup = await readBackup(source)
+    const ledger = db(ctx)
+    const current = await ledger.snapshotState()
+    const safetyPath = await writeBeforeImportBackup(ctx, current.txns, current.meta)
+    await ledger.replaceAll(backup.txns, backup.meta)
+    return { txnCount: backup.txns.length, safetyPath }
   }
 }
 

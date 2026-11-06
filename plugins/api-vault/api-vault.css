@@ -1,0 +1,58 @@
+/* API 配置页：结构与配色沿用全局插件页，颜色全部取自皮肤变量 */
+
+.vault-toolbar .vault-count {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* 密钥按等宽字排布，避免不同皮肤字宽导致遮罩与明文跳动 */
+.vault-secret-row input {
+  font-family: 'Consolas', 'Cascadia Mono', 'DejaVu Sans Mono', monospace;
+  letter-spacing: 0.04em;
+}
+
+/* 窄窗口下模型槽位收窄，保持一行可读 */
+@media (max-width: 900px) {
+  .vault-model-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+}
+
+/* ---------- 皮肤微调 ---------- */
+
+[data-skin='terminal'] .vault-toolbar .vault-count {
+  color: var(--green);
+  text-shadow: var(--green-glow-text);
+}
+
+[data-skin='cosmos'] .vault-toolbar .vault-count {
+  color: var(--cyan);
+  letter-spacing: 0.16em;
+}
+
+[data-skin='frost'] .vault-toolbar .vault-count {
+  color: var(--pink);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+[data-skin='paper'] .vault-secret-row input,
+[data-skin='paper'] .vault-model-grid input {
+  border-bottom-color: var(--pink);
+}
+
+[data-skin='whirl'] .vault-toolbar .vault-count {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* 牧场皮肤的按钮是粗边像素斜面，输入框补齐同样的边宽与内阴影 */
+[data-skin='pasture'] .vault-secret-row input,
+[data-skin='pasture'] .vault-model-grid input {
+  border-width: 2px;
+  border-color: var(--tag-border);
+  box-shadow:
+    inset 1px 1px 0 var(--btn-light),
+    inset -1px -1px 0 var(--btn-dark);
+}

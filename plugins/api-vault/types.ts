@@ -9,24 +9,12 @@ export interface ApiEntry {
   updatedAt: number
 }
 
-export interface PromptEntry {
-  id: string
-  title: string
-  category: string
-  tags: string[]
-  role: string
-  content: string
-  updatedAt: number
-}
-
-export interface VaultData {
+export interface ApiVaultData {
   apis: ApiEntry[]
-  prompts: PromptEntry[]
   encryptionAvailable: boolean
 }
 
 export interface ExportResult {
   savedTo: string | null
   apiCount: number
-  promptCount: number
 }

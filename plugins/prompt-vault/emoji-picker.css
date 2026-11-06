@@ -1,0 +1,198 @@
+/* 图标选择器：面板固定定位，避免被编辑区的滚动容器裁切 */
+
+.prompt-emoji-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 9px !important;
+  color: var(--cream) !important;
+  background: var(--field-bg) !important;
+  border: var(--bd) solid var(--cyan-deep) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  rotate: 0deg !important;
+  filter: none !important;
+  font: inherit !important;
+  line-height: 1;
+}
+
+.prompt-emoji-trigger:hover:not(:disabled),
+.prompt-emoji-trigger:active:not(:disabled) {
+  color: var(--cream) !important;
+  background: var(--field-bg) !important;
+  border-color: var(--cyan-dim) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.prompt-emoji-trigger-value {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.prompt-emoji-trigger-empty {
+  font-size: 12px;
+  color: var(--placeholder);
+}
+
+.prompt-emoji-trigger-caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.prompt-emoji-panel {
+  position: fixed;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel-2);
+  border: var(--bd) solid var(--cyan-dim);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--overlay-shadow);
+}
+
+.prompt-emoji-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px;
+  background: var(--head-bg);
+  border-bottom: max(1px, var(--bd)) solid var(--hairline);
+}
+
+.prompt-emoji-tab {
+  padding: 4px 8px !important;
+  color: var(--muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: var(--radius) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  rotate: 0deg !important;
+  filter: none !important;
+  font-size: 10px !important;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+}
+
+.prompt-emoji-tab:hover:not(:disabled) {
+  color: var(--cream) !important;
+  background: var(--panel-3) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.prompt-emoji-tab.is-on {
+  color: var(--pink-hot) !important;
+  background: var(--panel-3) !important;
+}
+
+.prompt-emoji-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+  gap: 2px;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.prompt-emoji-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  transform: none !important;
+  rotate: 0deg !important;
+  filter: none !important;
+  font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif !important;
+  font-size: 18px !important;
+  letter-spacing: 0 !important;
+  line-height: 1 !important;
+}
+
+.prompt-emoji-cell:hover:not(:disabled) {
+  background: var(--panel-3) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.prompt-emoji-cell.is-on {
+  background: var(--nav-active-bg) !important;
+  outline: 1px solid var(--cyan-dim);
+}
+
+.prompt-emoji-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  background: var(--head-bg);
+  border-top: max(1px, var(--bd)) solid var(--hairline);
+}
+
+.prompt-emoji-clear {
+  padding: 4px 8px !important;
+  color: var(--muted) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  rotate: 0deg !important;
+  filter: none !important;
+  font-size: 10px !important;
+  line-height: 1.4;
+}
+
+.prompt-emoji-clear:hover:not(:disabled) {
+  color: var(--cream) !important;
+  background: var(--panel-3) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+/* ---------- 皮肤微调 ---------- */
+
+[data-skin='terminal'] .prompt-emoji-panel {
+  box-shadow: 0 0 0 1px var(--cyan-deep);
+}
+
+[data-skin='cosmos'] .prompt-emoji-panel {
+  border-color: var(--tag-border);
+  box-shadow: var(--overlay-shadow);
+}
+
+[data-skin='frost'] .prompt-emoji-panel {
+  background: rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+  backdrop-filter: blur(10px) saturate(1.05);
+}
+
+[data-skin='paper'] .prompt-emoji-panel {
+  border-color: var(--cyan);
+}
+
+[data-skin='whirl'] .prompt-emoji-cell.is-on {
+  outline-color: var(--pink-hot);
+}
+
+[data-skin='pasture'] .prompt-emoji-panel {
+  border-width: 2px;
+  border-color: var(--tag-border);
+  box-shadow: var(--overlay-shadow);
+}

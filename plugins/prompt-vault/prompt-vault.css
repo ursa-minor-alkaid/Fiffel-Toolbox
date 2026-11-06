@@ -1,0 +1,92 @@
+/* 提示词页：结构与配色沿用全局插件页，颜色全部取自皮肤变量 */
+
+.vault-toolbar .vault-count {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* 列表标题前的图标，固定宽度避免不同 emoji 让标题左右跳动 */
+.prompt-emoji {
+  display: inline-block;
+  width: 1.25em;
+  margin-right: 4px;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+  vertical-align: -1px;
+}
+
+/* 正文框随窗口高度收缩，长文在框内滚动，操作按钮始终可见 */
+.vault-prompt-body {
+  height: clamp(96px, 18vh, 150px);
+  min-height: 0;
+  line-height: 1.7;
+  overflow-y: auto;
+  resize: none;
+}
+
+/* 操作行吸附在编辑区底部，内容再长也不需要向下滚动才能保存或删除 */
+.vault-prompt-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-top: 8px;
+  background: inherit;
+}
+
+/* ---------- 皮肤微调 ---------- */
+
+[data-skin='terminal'] .vault-toolbar .vault-count {
+  color: var(--green);
+  text-shadow: var(--green-glow-text);
+}
+
+[data-skin='terminal'] .vault-prompt-body {
+  caret-color: var(--green);
+}
+
+[data-skin='cosmos'] .vault-toolbar .vault-count {
+  color: var(--cyan);
+  letter-spacing: 0.16em;
+}
+
+[data-skin='cosmos'] .vault-prompt-body {
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+}
+
+[data-skin='frost'] .vault-toolbar .vault-count {
+  color: var(--pink);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+[data-skin='frost'] .vault-prompt-body {
+  line-height: 1.75;
+  letter-spacing: 0.02em;
+}
+
+[data-skin='paper'] .vault-prompt-body {
+  font-family: var(--font-heading);
+  line-height: 1.9;
+}
+
+[data-skin='whirl'] .vault-toolbar .vault-count {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+[data-skin='whirl'] .vault-prompt-body {
+  font-family: var(--font-heading);
+  line-height: 1.75;
+}
+
+/* 牧场皮肤的按钮是粗边像素斜面，正文输入框补齐同样的边宽与内阴影 */
+[data-skin='pasture'] .vault-prompt-body {
+  border-width: 2px;
+  border-color: var(--tag-border);
+  box-shadow:
+    inset 1px 1px 0 var(--btn-light),
+    inset -1px -1px 0 var(--btn-dark);
+}

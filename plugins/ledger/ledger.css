@@ -731,12 +731,42 @@
   flex-wrap: wrap;
 }
 
-.ledger-account-flows {
+/* 查看流水弹窗：高度固定，流水过长时由列表区域内部滚动 */
+.ledger-flows-modal {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding-top: 6px;
-  border-top: max(1px, var(--bd)) solid var(--hairline);
+  height: 460px;
+  max-height: 82vh;
+}
+
+.ledger-flows-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 7px;
+  border-bottom: max(1px, var(--bd)) solid var(--hairline);
+}
+
+.ledger-flows-head b {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ledger-flows-head .dim {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-flows-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
 }
 
 .ledger-flow-line {
@@ -748,8 +778,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ledger-flows-scroll .ledger-flow-line {
+  padding: 5px 0;
+  border-bottom: max(1px, var(--bd)) solid var(--hairline);
+}
+
 .ledger-flow-line span:last-child {
   text-align: right;
+}
+
+.ledger-flows-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
 }
 
 .ledger-account-edit {
@@ -760,6 +805,52 @@
 
 .ledger-account-edit .ledger-form-row > input {
   min-width: 0;
+}
+
+/* 账户页底部的范围说明 */
+.ledger-accounts-note {
+  padding: 2px 2px 0;
+  font-size: 10.5px;
+  line-height: 1.8;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* 删除账户确认，弹窗外观沿用全局 .modal，配色取自皮肤变量 */
+.ledger-confirm-text {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--cream);
+}
+
+.ledger-confirm-note {
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.ledger-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ledger-danger {
+  color: var(--red);
+  background: transparent;
+  border-color: var(--red);
+  box-shadow: none;
+}
+
+.ledger-danger:hover:not(:disabled) {
+  color: var(--panel);
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: none;
+  transform: none;
+  filter: none;
 }
 
 /* ---------- 设置 ---------- */
@@ -806,6 +897,49 @@
   line-height: 1.8;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 导入恢复 ---------- */
+
+.ledger-import-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: max(1px, var(--bd)) solid var(--warn-border);
+  border-left: 3px solid var(--warn-ink);
+  border-radius: var(--radius-lg);
+  font-size: 11px;
+  color: var(--cream);
+}
+
+.ledger-import-title {
+  font-size: 11.5px;
+  color: var(--warn-ink);
+}
+
+.ledger-import-file {
+  font-size: 10.5px;
+  color: var(--muted);
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-import-stats {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-import-warn {
+  font-size: 10.5px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.ledger-import-confirm .ledger-setting-row {
+  padding-bottom: 0;
 }
 
 /* ---------- 撤销 ---------- */

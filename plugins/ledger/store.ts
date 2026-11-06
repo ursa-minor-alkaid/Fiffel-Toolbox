@@ -347,4 +347,18 @@ export class LedgerStore {
   async snapshotState(): Promise<{ txns: Txn[]; meta: Meta }> {
     return this.enqueue(() => this.ensureState())
   }
+
+  /** 整库替换，用于导入恢复；写入前沿用备份与当日快照机制 */
+  replaceAll(txns: Txn[], meta: Meta): Promise<void> {
+    return this.enqueue(async () => {
+      this.state = { txns, meta }
+      try {
+        await this.persistTxns(txns)
+        await this.persistMeta(meta)
+      } catch (err) {
+        this.state = null
+        throw err
+      }
+    })
+  }
 }
