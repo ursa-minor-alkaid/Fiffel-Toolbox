@@ -453,6 +453,11 @@
   letter-spacing: 0.24em;
 }
 
+/* 已登记边栏浮在内容之上，需要更高的不透明度保证文字可读 */
+[data-skin='pasture'] .app-rail-sheet {
+  background: rgba(254, 252, 244, 0.98);
+}
+
 /* 按钮：像素游戏式硬边直角、双层斜面、实心偏移投影，不用渐变与模糊，普通按钮再交替微倾 */
 [data-skin='pasture'] button:not(.titlebar-btn):not(.nav-item):not(.skin-menu-item):not(.ghost) {
   border-width: 2px;

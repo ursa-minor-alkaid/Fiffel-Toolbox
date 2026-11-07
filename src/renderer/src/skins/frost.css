@@ -254,6 +254,11 @@
   backdrop-filter: blur(10px) saturate(1.08);
 }
 
+/* 已登记边栏浮在内容之上，需要更高的不透明度保证文字可读 */
+[data-skin='frost'] .app-rail-sheet {
+  background: rgba(248, 252, 255, 0.98);
+}
+
 /* 冰霜：卡片浮起靠位移与描边变色 */
 [data-skin='frost'] .list-item {
   border-bottom: 1px solid rgba(15, 42, 66, 0.1);

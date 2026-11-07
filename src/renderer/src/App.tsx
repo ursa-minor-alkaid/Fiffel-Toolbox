@@ -9,6 +9,7 @@ import {
 import { api } from './bridge'
 import { pluginIcon } from './icons'
 import SkinPicker from './SkinPicker'
+import WhirlAscii from './skins/WhirlAscii'
 import TitleBar from './TitleBar'
 import type { PluginManifest } from '../../shared/types'
 
@@ -281,6 +282,7 @@ export default function App(): JSX.Element {
         </aside>
 
         <main className="main">
+          <WhirlAscii />
           <div className="pasture-stars" aria-hidden="true">
             <i />
             <i />

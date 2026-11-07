@@ -207,6 +207,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  /* 拖动指示条的定位基准 */
+  position: relative;
 }
 
 .ledger-subchips {
@@ -239,6 +241,54 @@
   z-index: 1;
 }
 
+/* 一级分类支持拖动排序与双击重命名 */
+.ledger-chip-parent {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* 按下后由脚本接管指针，避免被浏览器当成滚动 */
+  touch-action: none;
+}
+
+.ledger-chip-parent.is-dragging {
+  cursor: grabbing;
+  z-index: 4;
+  color: var(--pink-hot);
+  background: var(--panel-3);
+  border-color: var(--pink);
+  box-shadow: var(--panel-shadow);
+  transition: none;
+  will-change: transform;
+}
+
+/* 排序落点指示条，只做视觉提示，不参与换行布局 */
+.ledger-chip-drop {
+  position: absolute;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--pink);
+  box-shadow: 0 0 6px var(--pink-glow-soft);
+  pointer-events: none;
+}
+
+/* 双击一级分类后的原地输入框，样式与标签保持一致 */
+.ledger-chip-rename {
+  width: 96px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--cream);
+  background: var(--panel-3);
+  border: max(1px, var(--bd)) solid var(--pink);
+  box-shadow: none;
+}
+
+.ledger-chip-rename:focus,
+.ledger-chip-rename:focus-visible {
+  outline: none;
+  border-color: var(--pink);
+  box-shadow: none;
+}
+
 /* 新增二级标签的输入框，位于标签组最左侧，回车即保存 */
 .ledger-chip-add {
   flex: 0 0 auto;
@@ -265,6 +315,11 @@
   outline: none;
   border-color: var(--pink);
   box-shadow: none;
+}
+
+/* 一级标签的新增输入框跟在标签之后，宽度略宽以容纳占位文字 */
+.ledger-chip-add-parent {
+  width: 96px;
 }
 
 /* 选中标签右上角的删除按钮，配色取自皮肤变量 */

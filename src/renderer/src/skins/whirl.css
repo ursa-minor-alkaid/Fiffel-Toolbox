@@ -1,14 +1,14 @@
 /* --------------------------------------------------------------------------
    旋白 · 灰白实验编辑
-   细线框、微型排版、半调点阵，背景主体持续旋转形变
+   细线框、微型排版、毛玻璃控件，背景为低密度的 ASCII 苹果
    -------------------------------------------------------------------------- */
 [data-skin='whirl'] {
   color-scheme: light;
   --void: #f1f1ee;
   --ink-bg: #e9e9e5;
-  --panel: #f8f8f5;
-  --panel-2: #efefeb;
-  --panel-3: #e4e4df;
+  --panel: rgba(250, 250, 247, 0.48);
+  --panel-2: rgba(243, 243, 239, 0.44);
+  --panel-3: rgba(236, 236, 231, 0.54);
   --cyan: #202020;
   --cyan-dim: #70706a;
   --cyan-deep: #cecec8;
@@ -21,19 +21,19 @@
   --muted: #81817b;
   --red: #713838;
   --green: #363634;
-  --screen: #f6f6f3;
-  --inset: #e8e8e3;
+  --screen: rgba(246, 246, 243, 0.52);
+  --inset: rgba(232, 232, 227, 0.42);
   --logo-shadow: transparent;
-  --sidebar-bg: #f5f5f2;
-  --head-bg: #f5f5f2;
-  --active-bg: #e8e8e3;
-  --row-alt: rgba(0, 0, 0, 0.018);
-  --row-hover: #e9e9e4;
-  --preview-surface: #f7f7f4;
+  --sidebar-bg: rgba(245, 245, 242, 0.46);
+  --head-bg: rgba(244, 244, 240, 0.58);
+  --active-bg: rgba(255, 255, 255, 0.44);
+  --row-alt: rgba(255, 255, 255, 0.2);
+  --row-hover: rgba(255, 255, 255, 0.5);
+  --preview-surface: rgba(247, 247, 244, 0.46);
   --signal-strip: none;
   --inset-ring: transparent;
   --hairline: #deded8;
-  --tag-bg: #ecece7;
+  --tag-bg: rgba(255, 255, 255, 0.36);
   --tag-border: #c8c8c1;
   --scrim: rgba(26, 26, 24, 0.26);
   --warn-bg: #f0efe8;
@@ -55,7 +55,7 @@
   --overlay-shadow: 0 24px 70px rgba(27, 27, 25, 0.16);
   --shadow: 0 12px 30px rgba(27, 27, 25, 0.1);
   --shadow-sm: 0 3px 12px rgba(27, 27, 25, 0.07);
-  --btn-face: #f8f8f5;
+  --btn-face: rgba(255, 255, 255, 0.58);
   --btn-ink: #1b1b19;
   --btn-edge: transparent;
   --btn-light: transparent;
@@ -67,15 +67,15 @@
   --btn-hover-lift: translateY(-1px);
   --btn-press-lift: translateY(1px);
   --btn-hover-filter: none;
-  --primary-face: #1b1b19;
+  --primary-face: rgba(27, 27, 25, 0.82);
   --primary-ink: #f8f8f5;
   --primary-edge: transparent;
-  --field-bg: rgba(255, 255, 255, 0.5);
-  --field-bg-2: rgba(255, 255, 255, 0.42);
+  --field-bg: rgba(255, 255, 255, 0.38);
+  --field-bg-2: rgba(255, 255, 255, 0.3);
   --placeholder: #a1a19a;
   --nav-accent: transparent;
-  --nav-active-bg: #f8f8f5;
-  --nav-hover-bg: rgba(255, 255, 255, 0.42);
+  --nav-active-bg: rgba(255, 255, 255, 0.64);
+  --nav-hover-bg: rgba(255, 255, 255, 0.3);
   --nav-hover-border: transparent;
   --nav-active-bar: 0 5px 18px rgba(27, 27, 25, 0.08);
   --list-active-bar: 0 5px 18px rgba(27, 27, 25, 0.08);
@@ -118,15 +118,37 @@
   --glow-green: none;
   --green-glow-text: none;
   --selection-ink: #f8f8f5;
-  --frame-bg: #ffffff;
+  --frame-bg: rgba(255, 255, 255, 0.5);
   --frame-border: #c6c6c0;
   --skeleton-stripe: repeating-linear-gradient(90deg, rgba(27, 27, 25, 0.22) 0 2px, transparent 2px 6px);
   --ambient: #f1f1ee;
   --overlay: none;
+  /* 与 --cream 同值，供 Canvas 字符读取，保持字符与主题同一墨色 */
+  --ascii-ink: #1b1b19;
+
+  /* 毛玻璃：低不透明度、分层模糊与双色内描边突出材质 */
+  --glass-1: rgba(255, 255, 255, 0.24);
+  --glass-2: rgba(255, 255, 255, 0.38);
+  --glass-3: rgba(255, 255, 255, 0.58);
+  --glass-4: rgba(250, 250, 247, 0.68);
+  --glass-line: rgba(27, 27, 25, 0.16);
+  --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.92), inset 0 0 0 1px rgba(255, 255, 255, 0.48), inset 0 -1px 0 rgba(27, 27, 25, 0.08);
+  --glass-inner-strong: inset 0 1px 0 #ffffff, inset 0 0 0 1px rgba(27, 27, 25, 0.16), inset 0 -1px 0 rgba(27, 27, 25, 0.1);
+  --glass-inner-press: inset 0 2px 7px rgba(27, 27, 25, 0.2), inset 0 0 0 1px rgba(27, 27, 25, 0.16);
+  --glass-blur-sm: blur(14px) saturate(1.16);
+  --glass-blur: blur(28px) saturate(1.22);
+  --glass-blur-lg: blur(44px) saturate(1.28);
+  --glass-shadow-sm: 0 1px 2px rgba(27, 27, 25, 0.07), 0 7px 18px rgba(27, 27, 25, 0.09);
+  --glass-shadow: 0 1px 3px rgba(27, 27, 25, 0.08), 0 16px 38px rgba(27, 27, 25, 0.13);
+  --glass-shadow-lg: 0 2px 5px rgba(27, 27, 25, 0.1), 0 30px 76px rgba(27, 27, 25, 0.22);
 }
 
 [data-skin='whirl'] .sidebar {
   padding: 18px 14px 12px;
+  background: var(--sidebar-bg);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.6), var(--sidebar-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 
 [data-skin='whirl'] .brand {
@@ -162,15 +184,47 @@
   border: 0;
   border-radius: 12px;
   --tile-radius: 10px;
+  background: rgba(255, 255, 255, 0.28);
+  /* 近边用负扩散收薄，远场分层散开，避免 6px 间隙里出现贴边灰带 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+    0 1px 1px -1px rgba(27, 27, 25, 0.025),
+    0 6px 14px -6px rgba(27, 27, 25, 0.055),
+    0 18px 34px -14px rgba(27, 27, 25, 0.075);
+  transition:
+    background var(--motion-slow),
+    border-color var(--motion-slow),
+    color var(--motion-slow),
+    padding var(--sidebar-motion),
+    gap var(--sidebar-motion),
+    opacity 0.16s linear,
+    box-shadow var(--motion-slow);
 }
 
-[data-skin='whirl'] .nav-item:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.72);
+[data-skin='whirl'] .nav-item:hover:not(:disabled):not(.active) {
+  background: var(--glass-3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 2px 4px -2px rgba(27, 27, 25, 0.04),
+    0 9px 20px -8px rgba(27, 27, 25, 0.075),
+    0 22px 40px -16px rgba(27, 27, 25, 0.09);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
 }
 
-[data-skin='whirl'] .nav-item.active {
-  background: #ffffff;
-  box-shadow: var(--nav-active-bar);
+[data-skin='whirl'] .nav-item.active,
+[data-skin='whirl'] .nav-item.active:hover:not(:disabled) {
+  background: var(--glass-3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 0 0 1px rgba(27, 27, 25, 0.055),
+    0 2px 5px -3px rgba(27, 27, 25, 0.05),
+    0 10px 22px -9px rgba(27, 27, 25, 0.08),
+    0 24px 44px -18px rgba(27, 27, 25, 0.09);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
 }
 
 [data-skin='whirl'] .nav-item.active .nav-label {
@@ -179,6 +233,12 @@
 
 [data-skin='whirl'] .nav-item.active .nav-tile {
   animation: whirlGlyph 5s linear infinite;
+}
+
+[data-skin='whirl'] .nav-item:active:not(:disabled) {
+  box-shadow:
+    inset 0 2px 5px rgba(27, 27, 25, 0.07),
+    inset 0 0 0 1px rgba(27, 27, 25, 0.05);
 }
 
 [data-skin='whirl'] .nav-desc {
@@ -191,35 +251,43 @@
   background: rgba(248, 248, 245, 0.32);
 }
 
-/* 半调主体：点阵在连续的轮廓形变中旋转 */
-[data-skin='whirl'] .main::before {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  top: 13%;
-  right: 5%;
-  width: min(36vw, 380px);
-  aspect-ratio: 1;
-  pointer-events: none;
-  background-image: radial-gradient(circle, rgba(24, 24, 22, 0.64) 0 0.85px, transparent 1.15px);
-  background-size: 5px 5px;
-  opacity: 0.15;
-  -webkit-mask-image: radial-gradient(ellipse at 44% 46%, #000 8%, rgba(0, 0, 0, 0.9) 42%, transparent 71%);
-  mask-image: radial-gradient(ellipse at 44% 46%, #000 8%, rgba(0, 0, 0, 0.9) 42%, transparent 71%);
-  animation: whirlOrb 16s linear infinite;
+/* 字符背景：全屏字符场与三维缺口苹果分层绘制，固定光源配合慢速 Y 轴旋转 */
+.whirl-ascii {
+  display: none;
 }
 
-[data-skin='whirl'] .main::after {
-  content: '';
+[data-skin='whirl'] .whirl-ascii {
   position: absolute;
+  inset: 0;
   z-index: 0;
-  top: 0;
-  right: 30px;
-  left: 30px;
-  height: 1px;
+  display: block;
+  overflow: hidden;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(27, 27, 25, 0.24), transparent);
-  animation: whirlScan 9s ease-in-out infinite;
+  user-select: none;
+  contain: layout paint;
+  opacity: 0.62;
+  -webkit-mask-image: radial-gradient(
+    ellipse 82% 78% at 60% 44%,
+    #000 6%,
+    rgba(0, 0, 0, 0.88) 34%,
+    rgba(0, 0, 0, 0.36) 68%,
+    transparent 96%
+  );
+  mask-image: radial-gradient(
+    ellipse 82% 78% at 60% 44%,
+    #000 6%,
+    rgba(0, 0, 0, 0.88) 34%,
+    rgba(0, 0, 0, 0.36) 68%,
+    transparent 96%
+  );
+}
+
+[data-skin='whirl'] .whirl-ascii canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 [data-skin='whirl'] .plate,
@@ -254,44 +322,199 @@
   animation: whirlPage 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-[data-skin='whirl'] button:not(.ghost):not(.webapp-restore):hover:not(:disabled) {
-  color: #f8f8f5;
-  background: #1b1b19;
+/* 交互按钮：常态为浅色毛玻璃，悬停提亮并加深投影，按下转为内凹 */
+[data-skin='whirl'] button {
+  background: var(--glass-2);
+  box-shadow: var(--glass-inner), var(--glass-shadow-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
+}
+
+[data-skin='whirl'] button:hover:not(:disabled) {
+  background: var(--glass-3);
+  box-shadow: var(--glass-inner-strong), 0 10px 26px rgba(27, 27, 25, 0.12);
+}
+
+[data-skin='whirl'] button:active:not(:disabled) {
+  background: rgba(236, 236, 231, 0.58);
+  box-shadow: var(--glass-inner-press);
+}
+
+[data-skin='whirl'] button:disabled {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(27, 27, 25, 0.08);
+  -webkit-backdrop-filter: blur(8px) saturate(1);
+  backdrop-filter: blur(8px) saturate(1);
+}
+
+/* 主按钮：墨色烟熏玻璃，与浅色玻璃形成主次层级 */
+[data-skin='whirl'] button.primary {
+  color: var(--primary-ink);
+  background: var(--primary-face);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 8px 22px rgba(27, 27, 25, 0.18);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
 }
 
 [data-skin='whirl'] button.primary:hover:not(:disabled) {
-  background: #454541;
+  background: rgba(37, 37, 34, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 12px 28px rgba(27, 27, 25, 0.22);
+}
+
+[data-skin='whirl'] button.primary:active:not(:disabled) {
+  background: rgba(22, 22, 20, 0.94);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* 幽灵按钮保持透明，仅在悬停时浮现玻璃底 */
+[data-skin='whirl'] button.ghost {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-skin='whirl'] button.ghost:hover:not(:disabled) {
+  color: var(--cyan);
+  background: var(--glass-2);
+  border-color: var(--glass-line);
+  box-shadow: var(--glass-inner), var(--glass-shadow-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
+}
+
+[data-skin='whirl'] button.ghost:active:not(:disabled) {
+  background: rgba(236, 236, 231, 0.56);
+  box-shadow: var(--glass-inner-press);
+}
+
+/* 标题栏按钮保持通透，避免整条标题栏出现碎片化模糊层 */
+[data-skin='whirl'] button.titlebar-btn {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-skin='whirl'] button.titlebar-btn:hover:not(:disabled) {
+  background: var(--glass-2);
+  box-shadow: var(--glass-inner);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
+}
+
+[data-skin='whirl'] button.titlebar-btn.close:hover:not(:disabled) {
+  color: var(--titlebar-close-ink);
+  background: var(--titlebar-close-bg);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 [data-skin='whirl'] th {
   color: #70706a;
-  background: #f1f1ed;
+  background: var(--head-bg);
   border: 0;
-  box-shadow: 0 10px 20px -18px rgba(27, 27, 25, 0.5);
+  box-shadow: inset 0 -1px 0 var(--hairline), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
 }
 
 [data-skin='whirl'] input,
 [data-skin='whirl'] select,
 [data-skin='whirl'] textarea {
   border: 0;
-  box-shadow: 0 3px 12px rgba(27, 27, 25, 0.05);
+  background: var(--field-bg);
+  box-shadow: inset 0 0 0 1px rgba(27, 27, 25, 0.08), var(--glass-shadow-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
+}
+
+[data-skin='whirl'] input:hover,
+[data-skin='whirl'] select:hover,
+[data-skin='whirl'] textarea:hover {
+  background: var(--glass-3);
+  box-shadow: inset 0 0 0 1px rgba(27, 27, 25, 0.14), var(--glass-shadow-sm);
 }
 
 [data-skin='whirl'] input:focus,
 [data-skin='whirl'] select:focus,
 [data-skin='whirl'] textarea:focus {
   border: 0;
-  background: #f8f8f5;
-  box-shadow: 0 6px 20px rgba(27, 27, 25, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(27, 27, 25, 0.24), 0 10px 26px rgba(27, 27, 25, 0.1);
+}
+
+/* 面板与浮层：面积越大模糊越深，保证玻璃质感与层次区分 */
+[data-skin='whirl'] .table-wrap,
+[data-skin='whirl'] .editor {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+[data-skin='whirl'] .modal {
+  border: 0;
+  background: var(--glass-4);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), var(--glass-shadow-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  backdrop-filter: var(--glass-blur-lg);
+}
+
+[data-skin='whirl'] .context-menu,
+[data-skin='whirl'] .skin-menu {
+  border: 0;
+  background: var(--glass-4);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68), var(--glass-shadow-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  backdrop-filter: var(--glass-blur-lg);
+}
+
+[data-skin='whirl'] .context-menu button,
+[data-skin='whirl'] .skin-menu-item {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-skin='whirl'] .context-menu button:hover:not(:disabled),
+[data-skin='whirl'] .skin-menu-item:hover:not(:disabled):not(.active) {
+  background: var(--glass-2);
+  box-shadow: var(--glass-inner);
+}
+
+[data-skin='whirl'] .context-menu button:active:not(:disabled),
+[data-skin='whirl'] .skin-menu-item:active:not(:disabled) {
+  background: rgba(236, 236, 231, 0.56);
+  box-shadow: var(--glass-inner-press);
+}
+
+[data-skin='whirl'] .skin-menu-item.active,
+[data-skin='whirl'] .skin-menu-item.active:hover:not(:disabled) {
+  background: var(--glass-3);
+  box-shadow: var(--glass-inner);
+}
+
+[data-skin='whirl'] .tag {
+  background: var(--tag-bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--glass-blur-sm);
 }
 
 [data-skin='whirl'] .list-item {
   padding-right: 10px;
 }
 
-[data-skin='whirl'] .modal {
-  border: 0;
-  box-shadow: var(--overlay-shadow);
+/* 键盘焦点：玻璃层下用细描边保证可感知的焦点位置 */
+[data-skin='whirl'] button:focus-visible,
+[data-skin='whirl'] input:focus-visible,
+[data-skin='whirl'] select:focus-visible,
+[data-skin='whirl'] textarea:focus-visible,
+[data-skin='whirl'] .nav-item:focus-visible {
+  outline: 1px solid rgba(27, 27, 25, 0.36);
+  outline-offset: 2px;
 }
 
 [data-skin='whirl'] .sidebar-foot::before {
@@ -300,37 +523,6 @@
   background: #1b1b19;
   box-shadow: none;
   animation: whirlPulse 2.8s ease-in-out infinite;
-}
-
-@keyframes whirlOrb {
-  0% {
-    transform: rotate(0deg) scale(0.94);
-    border-radius: 42% 58% 60% 40% / 52% 38% 62% 48%;
-    background-position: 0 0;
-  }
-  50% {
-    transform: rotate(180deg) scale(1.04);
-    border-radius: 58% 42% 40% 60% / 40% 58% 42% 60%;
-    background-position: 22px -14px;
-  }
-  100% {
-    transform: rotate(360deg) scale(0.94);
-    border-radius: 42% 58% 60% 40% / 52% 38% 62% 48%;
-    background-position: 44px -28px;
-  }
-}
-
-@keyframes whirlScan {
-  0%, 10% {
-    opacity: 0;
-    transform: translateY(0);
-  }
-  20% { opacity: 0.6; }
-  78% { opacity: 0.28; }
-  90%, 100% {
-    opacity: 0;
-    transform: translateY(72vh);
-  }
 }
 
 @keyframes whirlPulse {
@@ -365,17 +557,20 @@
 }
 
 [data-skin='whirl'] {
-  --titlebar-bg: #f5f5f2;
+  --titlebar-bg: rgba(245, 245, 242, 0.52);
   --titlebar-ink: #1b1b19;
   --titlebar-border: transparent;
-  --titlebar-hover: #e9e9e4;
+  --titlebar-hover: rgba(255, 255, 255, 0.38);
   --titlebar-close-bg: #1b1b19;
   --titlebar-close-ink: #f8f8f5;
 }
 
 [data-skin='whirl'] .titlebar {
   border-bottom: 0;
-  box-shadow: 0 1px 0 #deded8;
+  background: var(--titlebar-bg);
+  box-shadow: inset 0 -1px 0 var(--hairline);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 
 [data-skin='whirl'] .titlebar-title {

@@ -17,7 +17,14 @@ interface WebApp {
   file: string
   dir: string
   addedAt: number
+  groupId?: string
   missing: boolean
+}
+
+interface AppGroup {
+  id: string
+  name: string
+  collapsed: boolean
 }
 
 interface StorageInfo {
@@ -76,6 +83,28 @@ export default function WebAppView(): JSX.Element {
   const [renameHoldsRail, setRenameHoldsRail] = useState(false)
   const [deleting, setDeleting] = useState<WebApp | null>(null)
   const [deleteWithData, setDeleteWithData] = useState(false)
+  const [groups, setGroups] = useState<AppGroup[]>([])
+  const [groupMenu, setGroupMenu] = useState<{ group: AppGroup; x: number; y: number } | null>(
+    null
+  )
+  const [groupEditor, setGroupEditor] = useState<{ mode: 'create' | 'rename'; id?: string } | null>(
+    null
+  )
+  const [groupDraft, setGroupDraft] = useState('')
+  const [deletingGroup, setDeletingGroup] = useState<AppGroup | null>(null)
+  const [assigning, setAssigning] = useState<WebApp | null>(null)
+  const [dropGroupId, setDropGroupId] = useState('')
+  const [sortDragId, setSortDragId] = useState('')
+  const [sortHeight, setSortHeight] = useState(0)
+  const [sortGhost, setSortGhost] = useState<{
+    group: AppGroup
+    count: number
+    collapsed: boolean
+    left: number
+    top: number
+    width: number
+  } | null>(null)
+  const [sortDrop, setSortDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logOpen, setLogOpen] = useState(false)
@@ -109,12 +138,39 @@ export default function WebAppView(): JSX.Element {
     moved: boolean
   } | null>(null)
   const dragOrderRef = useRef<string[]>([])
+  const appsOrderRef = useRef<string[]>([])
+  const dropGroupRef = useRef('')
   const initialOrderRef = useRef('')
   const suppressClick = useRef(false)
+  const sortDragRef = useRef<{
+    id: string
+    pointerId: number
+    startX: number
+    startY: number
+    offsetY: number
+    top: number
+    left: number
+    width: number
+    height: number
+    moved: boolean
+  } | null>(null)
+  const sortOrderRef = useRef<string[]>([])
+  const sortDropRef = useRef<{ id: string; edge: 'before' | 'after' } | null>(null)
+  const sortGhostRef = useRef<HTMLDivElement>(null)
+  const suppressSortClick = useRef(false)
+
+  /** 菜单或弹窗打开期间保持边栏展开，避免鼠标移出后收起 */
+  const railLocked = Boolean(
+    menu || groupMenu || renaming || groupEditor || deletingGroup || assigning
+  )
 
   const refresh = useCallback(async (): Promise<void> => {
-    const list = await invoke<WebApp[]>('list')
+    const [list, groupList] = await Promise.all([
+      invoke<WebApp[]>('list'),
+      invoke<AppGroup[]>('listGroups')
+    ])
     setApps(list)
+    setGroups(groupList)
     setActiveId((current) =>
       current && list.some((app) => app.id === current) ? current : (list[0]?.id ?? '')
     )
@@ -172,17 +228,20 @@ export default function WebAppView(): JSX.Element {
   }, [immersive])
 
   useEffect(() => {
-    if (!menu) return
+    if (!menu && !groupMenu) return
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setMenu(null)
+      if (event.key === 'Escape') {
+        setMenu(null)
+        setGroupMenu(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [menu])
+  }, [menu, groupMenu])
 
   /** 重命名结束后继续保留边栏，直到鼠标离开边栏区域 */
   useEffect(() => {
-    if (!railSticky || renaming) return
+    if (!railSticky || railLocked) return
     const onMove = (event: PointerEvent): void => {
       const rail = railRef.current
       if (!rail) return
@@ -192,7 +251,7 @@ export default function WebAppView(): JSX.Element {
     }
     window.addEventListener('pointermove', onMove)
     return () => window.removeEventListener('pointermove', onMove)
-  }, [railSticky, renaming])
+  }, [railSticky, railLocked])
 
   /**
    * 在预览容器（iframe 之外）向下滚动进入沉浸模式。
@@ -394,15 +453,334 @@ export default function WebAppView(): JSX.Element {
     event.preventDefault()
   }
 
-  /** 指针越过其余条目中点时切换插入位置 */
-  const moveDragTo = (pointerY: number): void => {
+  const groupIdOf = (app: WebApp): string =>
+    app.groupId && groups.some((group) => group.id === app.groupId) ? app.groupId : ''
+
+  const assignApp = async (app: WebApp, groupId: string): Promise<void> => {
+    const target = groups.find((group) => group.id === groupId) ?? null
+    const list = await invoke<WebApp[]>('assignGroup', { id: app.id, groupId })
+    setApps(list)
+    if (target?.collapsed) {
+      // 归类成功后展开目标分组，便于直接看到结果；展开失败不影响归类
+      try {
+        const next = await invoke<AppGroup[]>('setGroupCollapsed', {
+          id: target.id,
+          collapsed: false
+        })
+        setGroups(next)
+      } catch {
+        setGroups((previous) =>
+          previous.map((item) => (item.id === target.id ? { ...item, collapsed: false } : item))
+        )
+      }
+    }
+    setStatus(groupId ? `已归类到「${target?.name ?? ''}」` : '已移出分组')
+  }
+
+  const chooseGroupForApp = async (app: WebApp, groupId: string): Promise<void> => {
+    setAssigning(null)
+    try {
+      await assignApp(app, groupId)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '归类失败')
+    }
+  }
+
+  const toggleGroup = async (group: AppGroup): Promise<void> => {
+    setGroups((previous) =>
+      previous.map((item) => (item.id === group.id ? { ...item, collapsed: !group.collapsed } : item))
+    )
+    try {
+      const next = await invoke<AppGroup[]>('setGroupCollapsed', {
+        id: group.id,
+        collapsed: !group.collapsed
+      })
+      setGroups(next)
+    } catch (error) {
+      setGroups((previous) =>
+        previous.map((item) => (item.id === group.id ? { ...item, collapsed: group.collapsed } : item))
+      )
+      setStatus(error instanceof Error ? error.message : '分组状态更新失败')
+    }
+  }
+
+  const openGroupEditor = (mode: 'create' | 'rename', group?: AppGroup): void => {
+    setGroupMenu(null)
+    setRailSticky(true)
+    setGroupEditor({ mode, id: group?.id })
+    setGroupDraft(mode === 'rename' ? (group?.name ?? '') : '')
+  }
+
+  const closeGroupEditor = (): void => setGroupEditor(null)
+
+  const commitGroupEditor = async (): Promise<void> => {
+    if (!groupEditor) return
+    const editing = groupEditor
+    const name = groupDraft.trim()
+    try {
+      if (editing.mode === 'create') {
+        const next = await invoke<AppGroup[]>('createGroup', { name })
+        setGroups(next)
+        const created = next[next.length - 1]
+        setStatus(`已新建分组「${created?.name ?? name}」`)
+      } else if (editing.id) {
+        const next = await invoke<AppGroup[]>('renameGroup', { id: editing.id, name })
+        setGroups(next)
+        const renamed = next.find((group) => group.id === editing.id)
+        setStatus(`分组已重命名为「${renamed?.name ?? name}」`)
+      }
+      setGroupEditor(null)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '分组保存失败')
+    }
+  }
+
+  const requestRemoveGroup = (group: AppGroup): void => {
+    setGroupMenu(null)
+    setRailSticky(true)
+    setDeletingGroup(group)
+  }
+
+  const confirmRemoveGroup = async (): Promise<void> => {
+    if (!deletingGroup) return
+    const group = deletingGroup
+    setDeletingGroup(null)
+    try {
+      const result = await invoke<{ groups: AppGroup[]; apps: WebApp[] }>('removeGroup', {
+        id: group.id
+      })
+      setGroups(result.groups)
+      setApps(result.apps)
+      setStatus(`已删除分组「${group.name}」，其中页面已移到未分组`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '删除分组失败')
+    }
+  }
+
+  /** 命中测试时跳过拖拽浮层，再判断指针落在边栏哪个分组内 */
+  const groupAtPoint = (x: number, y: number): { inside: boolean; groupId: string } => {
+    const sheet = listRef.current
+    if (!sheet) return { inside: false, groupId: '' }
+    const stack = document.elementsFromPoint(x, y)
+    for (const element of stack) {
+      if (element.closest('.app-drag-layer, .app-drag-ghost, .app-group-drag-ghost')) continue
+      if (!sheet.contains(element)) return { inside: false, groupId: '' }
+      const group = element.closest<HTMLElement>('.app-group')
+      return { inside: true, groupId: group?.dataset.groupId ?? '' }
+    }
+    return { inside: false, groupId: '' }
+  }
+
+  const pointerInSheet = (x: number, y: number): boolean => {
+    const sheet = listRef.current
+    if (!sheet) return false
+    const stack = document.elementsFromPoint(x, y)
+    for (const element of stack) {
+      if (element.closest('.app-drag-layer, .app-drag-ghost, .app-group-drag-ghost')) continue
+      return sheet.contains(element)
+    }
+    return false
+  }
+
+  /** 以各分组标题的中线为界，计算拖动分组应插入的位置 */
+  const sortDropAt = (pointerY: number): { id: string; edge: 'before' | 'after' } | null => {
+    const sheet = listRef.current
+    const drag = sortDragRef.current
+    if (!sheet || !drag) return null
+    const nodes = Array.from(sheet.querySelectorAll<HTMLElement>('.app-group'))
+    const others = nodes.filter((node) => node.dataset.groupId !== drag.id)
+    if (!others.length) return null
+
+    let insertAt = others.length
+    for (let index = 0; index < others.length; index += 1) {
+      const head = others[index].querySelector<HTMLElement>('.app-group-head')
+      if (!head) continue
+      const box = head.getBoundingClientRect()
+      if (pointerY < box.top + box.height / 2) {
+        insertAt = index
+        break
+      }
+    }
+
+    if (insertAt >= others.length) {
+      const last = others[others.length - 1].dataset.groupId ?? ''
+      return last ? { id: last, edge: 'after' } : null
+    }
+    const id = others[insertAt].dataset.groupId ?? ''
+    return id ? { id, edge: 'before' } : null
+  }
+
+  const applySortDrop = (next: { id: string; edge: 'before' | 'after' } | null): void => {
+    const previous = sortDropRef.current
+    if (
+      previous === next ||
+      (previous && next && previous.id === next.id && previous.edge === next.edge)
+    ) {
+      return
+    }
+    sortDropRef.current = next
+    setSortDrop(next)
+  }
+
+  const beginGroupSort = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    group: AppGroup,
+    count: number
+  ): void => {
+    if (event.button !== 0) return
+    const sheet = listRef.current
+    const header = event.currentTarget
+    const container = header.closest<HTMLElement>('.app-group')
+    if (!sheet || !container) return
+
+    const headerRect = header.getBoundingClientRect()
+    const box = container.getBoundingClientRect()
+    const drag = {
+      id: group.id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetY: event.clientY - headerRect.top,
+      top: headerRect.top,
+      left: box.left,
+      width: box.width,
+      height: box.height,
+      moved: false
+    }
+    sortDragRef.current = drag
+    sortOrderRef.current = groups.map((item) => item.id)
+    sortDropRef.current = null
+
+    let lastX = event.clientX
+    let lastY = event.clientY
+    let inside = false
+    let frame = 0
+
+    // 指针贴近边栏上下边缘时持续滚动
+    const autoScroll = (): void => {
+      const current = sortDragRef.current
+      if (!sheet || !current) return
+      const rect = sheet.getBoundingClientRect()
+      const edge = 30
+      let delta = 0
+      if (lastY < rect.top + edge) delta = -Math.ceil((rect.top + edge - lastY) / 4)
+      else if (lastY > rect.bottom - edge) delta = Math.ceil((lastY - rect.bottom + edge) / 4)
+      if (delta !== 0) {
+        sheet.scrollTop += delta
+        if (inside) applySortDrop(sortDropAt(lastY))
+      }
+      frame = requestAnimationFrame(autoScroll)
+    }
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId !== drag.pointerId) return
+      const current = sortDragRef.current
+      if (!current) return
+      lastX = moveEvent.clientX
+      lastY = moveEvent.clientY
+
+      if (!current.moved) {
+        const far =
+          Math.abs(moveEvent.clientY - current.startY) >= 4 ||
+          Math.abs(moveEvent.clientX - current.startX) >= 4
+        if (!far) return
+        current.moved = true
+        suppressSortClick.current = true
+        setSortDragId(current.id)
+        setSortHeight(current.height)
+        setSortGhost({
+          group,
+          count,
+          collapsed: group.collapsed,
+          left: current.left,
+          top: current.top,
+          width: current.width
+        })
+        requestAnimationFrame(() => {
+          const active = sortDragRef.current
+          const ghost = sortGhostRef.current
+          if (ghost && active) {
+            ghost.style.setProperty('--drag-y', `${lastY - active.offsetY - active.top}px`)
+          }
+        })
+        frame = requestAnimationFrame(autoScroll)
+      }
+
+      moveEvent.preventDefault()
+      const ghost = sortGhostRef.current
+      if (ghost) {
+        ghost.style.setProperty('--drag-y', `${moveEvent.clientY - current.offsetY - current.top}px`)
+      }
+
+      inside = pointerInSheet(lastX, lastY)
+      applySortDrop(inside ? sortDropAt(lastY) : null)
+    }
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('blur', finish)
+      if (frame) cancelAnimationFrame(frame)
+
+      const current = sortDragRef.current
+      sortDragRef.current = null
+      const drop = sortDropRef.current
+      sortDropRef.current = null
+      setSortDragId('')
+      setSortHeight(0)
+      setSortGhost(null)
+      setSortDrop(null)
+      if (!current?.moved) return
+      setRailSticky(true)
+
+      window.setTimeout(() => {
+        suppressSortClick.current = false
+      }, 0)
+
+      if (!drop) return
+      const others = sortOrderRef.current.filter((id) => id !== current.id)
+      const at = others.indexOf(drop.id)
+      if (at < 0) return
+      const insertAt = drop.edge === 'before' ? at : at + 1
+      const next = [...others]
+      next.splice(insertAt, 0, current.id)
+      if (next.join('|') === sortOrderRef.current.join('|')) return
+
+      setGroups((previous) => {
+        const byId = new Map(previous.map((item) => [item.id, item]))
+        return next
+          .map((id) => byId.get(id))
+          .filter((item): item is AppGroup => Boolean(item))
+      })
+      void invoke<AppGroup[]>('reorderGroups', { ids: next })
+        .then((list) => setGroups(list))
+        .catch((error) => {
+          setStatus(error instanceof Error ? error.message : '分组排序保存失败')
+          void invoke<AppGroup[]>('listGroups')
+            .then((list) => setGroups(list))
+            .catch(() => undefined)
+        })
+    }
+
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    window.addEventListener('blur', finish)
+  }
+
+  /** 在指定范围内按指针位置调整顺序，其余范围的顺序保持不变 */
+  const moveDragTo = (pointerY: number, scopeId: string): void => {
     const sheet = listRef.current
     const drag = dragRef.current
     if (!sheet || !drag) return
 
-    const nodes = Array.from(sheet.querySelectorAll<HTMLElement>('.list-item'))
+    const selector = scopeId
+      ? `.app-group[data-group-id="${scopeId}"] .list-item`
+      : '.list-item[data-group-id=""]'
+    const nodes = Array.from(sheet.querySelectorAll<HTMLElement>(selector))
     const ids = nodes.map((node) => node.dataset.id ?? '').filter(Boolean)
-    if (ids.length < 2) return
+    if (ids.length < 2 || !ids.includes(drag.id)) return
 
     const others = nodes.filter((node) => node.dataset.id !== drag.id)
     let insertAt = others.length
@@ -414,14 +792,22 @@ export default function WebAppView(): JSX.Element {
       }
     }
 
-    const without = ids.filter((id) => id !== drag.id)
-    without.splice(insertAt, 0, drag.id)
-    if (without.join('|') === ids.join('|')) return
+    const nextScope = ids.filter((id) => id !== drag.id)
+    nextScope.splice(insertAt, 0, drag.id)
+    if (nextScope.join('|') === ids.join('|')) return
 
-    dragOrderRef.current = without
+    const scoped = new Set(ids)
+    let cursor = 0
+    const nextGlobal = appsOrderRef.current.map((id) =>
+      scoped.has(id) ? nextScope[cursor++] : id
+    )
+    if (nextGlobal.join('|') === appsOrderRef.current.join('|')) return
+
+    appsOrderRef.current = nextGlobal
+    dragOrderRef.current = nextGlobal
     setApps((previous) => {
       const byId = new Map(previous.map((app) => [app.id, app]))
-      return without
+      return nextGlobal
         .map((id) => byId.get(id))
         .filter((app): app is WebApp => Boolean(app))
     })
@@ -443,9 +829,15 @@ export default function WebAppView(): JSX.Element {
       moved: false
     }
     dragRef.current = drag
-    dragOrderRef.current = apps.map((entry) => entry.id)
+    appsOrderRef.current = apps.map((entry) => entry.id)
+    dragOrderRef.current = [...appsOrderRef.current]
     initialOrderRef.current = dragOrderRef.current.join('|')
+    dropGroupRef.current = ''
+    setDropGroupId('')
 
+    const ownGroup = groupIdOf(app)
+    let scope = ownGroup
+    let canReorder = true
     let lastY = event.clientY
     let frame = 0
 
@@ -460,7 +852,7 @@ export default function WebAppView(): JSX.Element {
       else if (lastY > box.bottom - edge) delta = Math.ceil((lastY - box.bottom + edge) / 4)
       if (delta !== 0) {
         sheet.scrollTop += delta
-        moveDragTo(lastY)
+        if (canReorder) moveDragTo(lastY, scope)
       }
       frame = requestAnimationFrame(autoScroll)
     }
@@ -498,7 +890,18 @@ export default function WebAppView(): JSX.Element {
       if (ghost) {
         ghost.style.setProperty('--drag-y', `${moveEvent.clientY - current.offsetY - current.top}px`)
       }
-      moveDragTo(moveEvent.clientY)
+
+      const hit = groupAtPoint(moveEvent.clientX, moveEvent.clientY)
+      const targetGroup = hit.inside && hit.groupId !== ownGroup ? hit.groupId : ''
+      if (targetGroup !== dropGroupRef.current) {
+        dropGroupRef.current = targetGroup
+        setDropGroupId(targetGroup)
+      }
+      canReorder = hit.inside && hit.groupId === ownGroup
+      if (canReorder) {
+        scope = ownGroup
+        moveDragTo(moveEvent.clientY, scope)
+      }
     }
 
     const finish = (): void => {
@@ -509,8 +912,11 @@ export default function WebAppView(): JSX.Element {
       if (frame) cancelAnimationFrame(frame)
       const current = dragRef.current
       dragRef.current = null
+      const targetGroup = dropGroupRef.current
+      dropGroupRef.current = ''
       setDragId('')
       setDragGhost(null)
+      setDropGroupId('')
       if (!current?.moved) return
       setRailSticky(true)
 
@@ -518,11 +924,20 @@ export default function WebAppView(): JSX.Element {
         suppressClick.current = false
       }, 0)
 
-      if (dragOrderRef.current.join('|') !== initialOrderRef.current) {
-        void invoke<WebApp[]>('reorder', { ids: dragOrderRef.current })
-          .then((list) => setApps(list))
-          .catch(() => undefined)
+      const persist = async (): Promise<void> => {
+        try {
+          if (dragOrderRef.current.join('|') !== initialOrderRef.current) {
+            const list = await invoke<WebApp[]>('reorder', { ids: dragOrderRef.current })
+            setApps(list)
+          }
+          if (targetGroup && targetGroup !== ownGroup) {
+            await assignApp(app, targetGroup)
+          }
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : '归类失败')
+        }
       }
+      void persist()
     }
 
     window.addEventListener('pointermove', onMove, { passive: false })
@@ -632,6 +1047,48 @@ export default function WebAppView(): JSX.Element {
     closeRename()
   }
 
+  const railPinned = Boolean(
+    menu ||
+      groupMenu ||
+      dragId ||
+      sortDragId ||
+      groupEditor ||
+      deletingGroup ||
+      assigning ||
+      (renaming && renameHoldsRail)
+  )
+  const ungrouped = apps.filter((app) => !groupIdOf(app))
+
+  const renderItem = (app: WebApp): JSX.Element => (
+    <div
+      key={app.id}
+      data-id={app.id}
+      data-group-id={groupIdOf(app)}
+      className={`list-item${app.id === activeId ? ' active' : ''}${app.id === dragId ? ' is-dragging' : ''}`}
+      onPointerDown={(event) => beginItemDrag(event, app)}
+      onClick={() => {
+        if (suppressClick.current) return
+        setActiveId(app.id)
+        setRailOpen(false)
+        setRailSticky(false)
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenu({ app, x: event.clientX, y: event.clientY })
+      }}
+    >
+      <div className="list-item-title">
+        {app.name}
+        {app.missing ? (
+          <span className="tag" style={{ marginLeft: 6 }}>
+            文件缺失
+          </span>
+        ) : null}
+      </div>
+      <div className="list-item-sub">{app.dir}</div>
+    </div>
+  )
+
   const dataKeys = Object.keys(data)
   const totalBytes = dataKeys.reduce((sum, key) => sum + byteLength(data[key]), 0)
   const errorCount = logs.filter((entry) => entry.level === 'error').length
@@ -673,10 +1130,10 @@ export default function WebAppView(): JSX.Element {
       <div className="panes webapp-stage">
         <div
           ref={railRef}
-          className={`app-rail${railOpen || railSticky || menu || dragId || (renaming && renameHoldsRail) ? ' is-open' : ''}`}
+          className={`app-rail${railOpen || railSticky || railPinned ? ' is-open' : ''}`}
           onMouseLeave={() => {
             setRailOpen(false)
-            if (!renaming) setRailSticky(false)
+            if (!railLocked) setRailSticky(false)
           }}
           onDragOver={handleDragOver}
           onDrop={(event) => void handleDrop(event)}
@@ -685,7 +1142,7 @@ export default function WebAppView(): JSX.Element {
             type="button"
             className="app-rail-trigger"
             title={`已登记 ${apps.length} 个页面`}
-            aria-expanded={railOpen || railSticky || menu !== null}
+            aria-expanded={railOpen || railSticky || railPinned}
             onClick={() => {
               setRailSticky(false)
               setRailOpen((value) => !value)
@@ -699,35 +1156,68 @@ export default function WebAppView(): JSX.Element {
             <div className="app-rail-sheet" ref={listRef}>
               <div className="list-pane-head">
                 <span className="dim">已登记 {apps.length} 个页面</span>
-              </div>
-              {apps.map((app) => (
-                <div
-                  key={app.id}
-                  data-id={app.id}
-                  className={`list-item${app.id === activeId ? ' active' : ''}${app.id === dragId ? ' is-dragging' : ''}`}
-                  onPointerDown={(event) => beginItemDrag(event, app)}
-                  onClick={() => {
-                    if (suppressClick.current) return
-                    setActiveId(app.id)
-                    setRailOpen(false)
-                    setRailSticky(false)
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    setMenu({ app, x: event.clientX, y: event.clientY })
-                  }}
+                <button
+                  type="button"
+                  className="ghost small app-rail-newgroup"
+                  title="新建分组"
+                  onClick={() => openGroupEditor('create')}
                 >
-                  <div className="list-item-title">
-                    {app.name}
-                    {app.missing ? (
-                      <span className="tag" style={{ marginLeft: 6 }}>
-                        文件缺失
-                      </span>
-                    ) : null}
+                  新建分组
+                </button>
+              </div>
+
+              {groups.map((group) => {
+                const members = apps.filter((app) => groupIdOf(app) === group.id)
+                const sorting = sortDragId === group.id
+                return (
+                  <div
+                    key={group.id}
+                    data-group-id={group.id}
+                    style={sorting ? { height: sortHeight } : undefined}
+                    className={`app-group${group.collapsed ? ' is-collapsed' : ''}${dropGroupId === group.id ? ' is-drop-target' : ''}${sorting ? ' is-sorting' : ''}${sortDrop?.id === group.id ? ` is-drop-${sortDrop.edge}` : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="ghost app-group-head"
+                      title={group.collapsed ? '展开分组' : '收起分组'}
+                      aria-expanded={!group.collapsed}
+                      onPointerDown={(event) => beginGroupSort(event, group, members.length)}
+                      onClick={() => {
+                        if (suppressSortClick.current) return
+                        void toggleGroup(group)
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        setGroupMenu({ group, x: event.clientX, y: event.clientY })
+                      }}
+                    >
+                      <span
+                        className={`app-group-caret${group.collapsed ? ' is-collapsed' : ''}`}
+                        aria-hidden="true"
+                      />
+                      <span className="app-group-name">{group.name}</span>
+                      <span className="app-group-count">{members.length}</span>
+                    </button>
+
+                    {!group.collapsed && (
+                      <div className="app-group-body">
+                        {members.map(renderItem)}
+                        {!members.length && (
+                          <div className="app-group-empty">空分组，拖动页面到这里归类</div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="list-item-sub">{app.dir}</div>
+                )
+              })}
+
+              {groups.length > 0 && ungrouped.length > 0 && (
+                <div className="app-rail-divider">
+                  <span>未分组</span>
                 </div>
-              ))}
+              )}
+
+              {ungrouped.map(renderItem)}
               {!apps.length && <div className="empty">还没有登记页面</div>}
             </div>
           </div>
@@ -881,7 +1371,7 @@ export default function WebAppView(): JSX.Element {
               className="context-menu"
               style={{
                 left: Math.max(8, Math.min(menu.x, window.innerWidth - 180)),
-                top: Math.max(8, Math.min(menu.y, window.innerHeight - 96))
+                top: Math.max(8, Math.min(menu.y, window.innerHeight - 130))
               }}
               onContextMenu={(event) => event.preventDefault()}
             >
@@ -894,6 +1384,15 @@ export default function WebAppView(): JSX.Element {
               >
                 重命名
               </button>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setMenu(null)
+                  setAssigning(menu.app)
+                }}
+              >
+                归类到分组
+              </button>
               <button className="ghost" onClick={() => requestRemove(menu.app)}>
                 删除
               </button>
@@ -902,7 +1401,63 @@ export default function WebAppView(): JSX.Element {
           document.body
         )}
 
+      {groupMenu &&
+        createPortal(
+          <>
+            <div
+              className="menu-backdrop"
+              onClick={() => setGroupMenu(null)}
+              onContextMenu={(event) => event.preventDefault()}
+            />
+            <div
+              className="context-menu"
+              style={{
+                left: Math.max(8, Math.min(groupMenu.x, window.innerWidth - 180)),
+                top: Math.max(8, Math.min(groupMenu.y, window.innerHeight - 96))
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <button
+                className="ghost"
+                onClick={() => openGroupEditor('rename', groupMenu.group)}
+              >
+                重命名分组
+              </button>
+              <button className="ghost" onClick={() => requestRemoveGroup(groupMenu.group)}>
+                删除分组
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
+
       {dragId && createPortal(<div className="app-drag-layer" />, document.body)}
+
+      {sortDragId && createPortal(<div className="app-drag-layer" />, document.body)}
+
+      {sortGhost &&
+        createPortal(
+          <div
+            ref={sortGhostRef}
+            className="app-group-drag-ghost"
+            style={{
+              left: sortGhost.left,
+              top: sortGhost.top,
+              width: sortGhost.width,
+              transform: 'translate3d(0, var(--drag-y), 0)'
+            }}
+          >
+            <div className="app-group-head">
+              <span
+                className={`app-group-caret${sortGhost.collapsed ? ' is-collapsed' : ''}`}
+                aria-hidden="true"
+              />
+              <span className="app-group-name">{sortGhost.group.name}</span>
+              <span className="app-group-count">{sortGhost.count}</span>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {dragGhost &&
         createPortal(
@@ -947,6 +1502,98 @@ export default function WebAppView(): JSX.Element {
               </button>
               <button className="primary" onClick={() => void commitRename()}>
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {groupEditor && (
+        <div className="modal-backdrop" onClick={closeGroupEditor}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">
+              {groupEditor.mode === 'create' ? '新建分组' : '重命名分组'}
+            </div>
+            <input
+              value={groupDraft}
+              autoFocus
+              placeholder="分组名称"
+              onChange={(event) => setGroupDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void commitGroupEditor()
+              }}
+            />
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+              <button className="ghost" onClick={closeGroupEditor}>
+                取消
+              </button>
+              <button className="primary" onClick={() => void commitGroupEditor()}>
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingGroup && (
+        <div className="modal-backdrop" onClick={() => setDeletingGroup(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">删除分组</div>
+            <div className="dim" style={{ lineHeight: 1.7 }}>
+              确定删除分组「{deletingGroup.name}」？分组内的页面会移到未分组区域，不会被删除。
+            </div>
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+              <button className="ghost" onClick={() => setDeletingGroup(null)}>
+                取消
+              </button>
+              <button className="primary" onClick={() => void confirmRemoveGroup()}>
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {assigning && (
+        <div className="modal-backdrop" onClick={() => setAssigning(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">归类到分组</div>
+            <div className="dim" style={{ lineHeight: 1.7 }}>
+              选择「{assigning.name}」要放入的分组。
+            </div>
+            <div className="assign-list">
+              <button
+                type="button"
+                className={`ghost assign-option${groupIdOf(assigning) ? '' : ' is-current'}`}
+                onClick={() => void chooseGroupForApp(assigning, '')}
+              >
+                <span>未分组</span>
+                <span className="dim">{groupIdOf(assigning) ? '移出分组' : '当前'}</span>
+              </button>
+              {groups.map((group) => {
+                const current = groupIdOf(assigning) === group.id
+                const count = apps.filter((app) => groupIdOf(app) === group.id).length
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    className={`ghost assign-option${current ? ' is-current' : ''}`}
+                    onClick={() => void chooseGroupForApp(assigning, group.id)}
+                  >
+                    <span>{group.name}</span>
+                    <span className="dim">{current ? '当前' : `${count} 个页面`}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {!groups.length && (
+              <div className="dim" style={{ marginTop: 8 }}>
+                还没有分组，可先在侧边栏新建分组。
+              </div>
+            )}
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+              <button className="ghost" onClick={() => setAssigning(null)}>
+                取消
               </button>
             </div>
           </div>

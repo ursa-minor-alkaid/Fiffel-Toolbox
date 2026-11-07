@@ -835,42 +835,81 @@ const handlers: PluginMainModule['handlers'] = {
 
   /** 删除分类：引用记录迁移到同类型的「其他」，返回迁移笔数 */
   async deleteCategory(args, ctx) {
-    const { id } = args as { id: string }
+    const { id, cascade } = args as { id: string; cascade?: boolean }
     const ledger = db(ctx)
     const state = await ledger.snapshotState()
     const target = state.meta.categories.find((item) => item.id === id)
     if (!target) return { ok: false, reason: '标签不存在' }
-    if (state.meta.categories.some((item) => item.parentId === id)) {
-      return { ok: false, reason: '该一级分类下还有标签，请先删除其标签' }
+
+    const children = state.meta.categories.filter((item) => item.parentId === id)
+    if (children.length && !cascade) {
+      return { ok: false, reason: '该一级分类下还有标签，请先删除其标签', childCount: children.length }
+    }
+    // 一级分类至少要保留一个，否则录入时没有可选分类
+    if (!target.parentId) {
+      const siblings = state.meta.categories.filter(
+        (item) => item.type === target.type && !item.parentId && item.id !== id
+      )
+      if (!siblings.length) return { ok: false, reason: '该类型至少需要保留一个一级分类' }
     }
 
+    const removed = new Set<string>([id, ...children.map((item) => item.id)])
     const parentFallback = state.meta.categories.find(
-      (item) => item.type === target.type && !item.parentId && item.name === '其他' && item.id !== id
+      (item) =>
+        item.type === target.type && !item.parentId && item.name === '其他' && !removed.has(item.id)
     )
     const fallback =
       parentFallback ??
-      state.meta.categories.find((item) => item.type === target.type && !item.parentId && item.id !== id)
+      state.meta.categories.find(
+        (item) => item.type === target.type && !item.parentId && !removed.has(item.id)
+      )
     const fallbackId = fallback?.id ?? null
-    // 记录迁移到「其他」，但「上次使用」停在原一级分类，避免界面跳到别的分类
+    // 删除二级标签时停留在原一级分类；删除一级分类时落到迁移目标，避免界面停留在已删除项
     const stayId = target.parentId ?? fallbackId ?? ''
 
-    const moved = state.txns.filter((txn) => txn.categoryId === id).length
+    const moved = state.txns.filter((txn) => txn.categoryId && removed.has(txn.categoryId)).length
     if (moved) {
       await ledger.mutateTxns((txns) => {
         for (const txn of txns) {
-          if (txn.categoryId === id) txn.categoryId = fallbackId
+          if (txn.categoryId && removed.has(txn.categoryId)) txn.categoryId = fallbackId
         }
       })
     }
 
     await ledger.mutateMeta((meta) => {
-      meta.categories = meta.categories.filter((item) => item.id !== id)
-      if (meta.settings.lastCategoryId === id) {
+      meta.categories = meta.categories.filter((item) => !removed.has(item.id))
+      if (meta.settings.lastCategoryId && removed.has(meta.settings.lastCategoryId)) {
         meta.settings.lastCategoryId = stayId
       }
     })
 
     return { ok: true, moved, fallbackId, stayId }
+  },
+
+  /** 一级分类排序：只重排这些分类在数组中的占位，二级分类与其他类型的位置保持不变 */
+  async reorderCategories(args, ctx): Promise<Category[]> {
+    const { ids } = args as { ids: string[] }
+    if (!Array.isArray(ids) || !ids.length) return []
+    return db(ctx).mutateMeta((meta) => {
+      const known = new Set(meta.categories.map((item) => item.id))
+      const ordered = ids.filter((id, index) => known.has(id) && ids.indexOf(id) === index)
+      if (ordered.length !== ids.length) return meta.categories
+      const targets = ordered.map((id) => meta.categories.find((item) => item.id === id) as Category)
+      if (targets.some((item) => item.parentId)) return meta.categories
+      if (new Set(targets.map((item) => item.type)).size !== 1) return meta.categories
+
+      const positions: number[] = []
+      meta.categories.forEach((item, index) => {
+        if (ordered.includes(item.id)) positions.push(index)
+      })
+      if (positions.length !== ordered.length) return meta.categories
+      const categories = [...meta.categories]
+      positions.forEach((position, index) => {
+        categories[position] = targets[index]
+      })
+      meta.categories = categories
+      return meta.categories
+    })
   },
 
   async saveSettings(args, ctx) {

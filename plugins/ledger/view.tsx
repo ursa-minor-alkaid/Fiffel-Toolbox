@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -112,6 +113,30 @@ export default function LedgerView(): JSX.Element {
   const [toTouched, setToTouched] = useState(false)
   const [toCurrencyTouched, setToCurrencyTouched] = useState(false)
   const [newSubName, setNewSubName] = useState('')
+
+  const parentRowRef = useRef<HTMLDivElement | null>(null)
+  const categoryDragRef = useRef<{
+    id: string
+    pointerId: number
+    startX: number
+    startY: number
+    startScroll: number
+    moved: boolean
+    node: HTMLElement
+  } | null>(null)
+  const categorySlots = useRef<
+    Array<{ id: string; left: number; top: number; width: number; height: number }>
+  >([])
+  const categoryOrder = useRef<string[]>([])
+  const suppressCategoryClick = useRef(false)
+  const chipFlipRects = useRef<Map<string, { left: number; top: number }> | null>(null)
+  const renameBusy = useRef(false)
+  const renameSettled = useRef(false)
+  const [dragCategoryId, setDragCategoryId] = useState('')
+  const [dropBar, setDropBar] = useState<{ left: number; top: number; height: number } | null>(null)
+  const [newParentName, setNewParentName] = useState('')
+  const [editingCategory, setEditingCategory] = useState<{ id: string; name: string } | null>(null)
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null)
 
   const [editingTxn, setEditingTxn] = useState<{ id: string; field: 'amount' | 'category' } | null>(null)
   const [editText, setEditText] = useState('')
@@ -424,6 +449,369 @@ export default function LedgerView(): JSX.Element {
       flash(messageOf(err), true)
     }
   }
+
+  /** 新增一级分类，创建后直接选中，便于继续补充二级标签 */
+  const addParentCategory = async (): Promise<void> => {
+    if (!meta || type === 'transfer') return
+    const name = newParentName.trim()
+    if (!name) return
+    const kind = type === 'income' ? 'income' : 'expense'
+    const duplicate = meta.categories.some(
+      (item) => !item.parentId && item.type === kind && item.name === name
+    )
+    if (duplicate) {
+      flash(`「${name}」已存在`, true)
+      return
+    }
+    try {
+      const saved = await invoke<Category>('saveCategory', { name, parentId: null, type: kind })
+      setData((prev) =>
+        prev ? { ...prev, meta: { ...prev.meta, categories: [...prev.meta.categories, saved] } } : prev
+      )
+      setNewParentName('')
+      setCategoryId(saved.id)
+      flash(`已新增一级分类「${saved.name}」`)
+    } catch (err) {
+      flash(messageOf(err), true)
+    }
+  }
+
+  /** 双击一级分类后提交重命名；输入框失焦时无效名称直接放弃，避免卡在编辑态 */
+  const commitCategoryRename = async (fromBlur = false): Promise<void> => {
+    const draft = editingCategory
+    if (!draft || renameBusy.current) return
+    const current = meta?.categories.find((item) => item.id === draft.id)
+    if (!current) {
+      setEditingCategory(null)
+      return
+    }
+    const name = draft.name.trim()
+    if (!name) {
+      if (fromBlur) {
+        setEditingCategory(null)
+        return
+      }
+      flash('标签名称不能为空', true)
+      return
+    }
+    if (name === current.name) {
+      setEditingCategory(null)
+      return
+    }
+    const duplicate = meta?.categories.some(
+      (item) =>
+        item.id !== draft.id &&
+        item.name === name &&
+        item.parentId === current.parentId &&
+        item.type === current.type
+    )
+    if (duplicate) {
+      flash(`「${name}」已存在`, true)
+      if (fromBlur) setEditingCategory(null)
+      return
+    }
+    renameBusy.current = true
+    try {
+      const saved = await invoke<Category>('saveCategory', {
+        id: current.id,
+        name,
+        parentId: current.parentId,
+        type: current.type
+      })
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              meta: {
+                ...prev.meta,
+                categories: prev.meta.categories.map((item) => (item.id === saved.id ? saved : item))
+              }
+            }
+          : prev
+      )
+      setEditingCategory(null)
+      flash(`已重命名为「${saved.name}」`)
+    } catch (err) {
+      flash(messageOf(err), true)
+    } finally {
+      renameBusy.current = false
+    }
+  }
+
+  /** 确认删除一级分类：其下二级标签一并删除，引用流水迁移到其他分类 */
+  const confirmRemoveCategory = async (): Promise<void> => {
+    const target = deletingCategory
+    if (!target) return
+    setDeletingCategory(null)
+    try {
+      const result = await invoke<{
+        ok: boolean
+        reason?: string
+        moved?: number
+        fallbackId?: string | null
+        stayId?: string
+      }>('deleteCategory', { id: target.id, cascade: true })
+      if (!result.ok) {
+        flash(result.reason ?? '无法删除该分类', true)
+        return
+      }
+      const reloaded = await invoke<LedgerData>('load')
+      apply(reloaded)
+      setEditingCategory(null)
+      if (!reloaded.meta.categories.some((item) => item.id === categoryId)) {
+        setCategoryId(result.stayId ?? reloaded.meta.settings.lastCategoryId)
+      }
+      flash(result.moved ? `已删除分类，${result.moved} 笔记录转到其他` : '已删除分类')
+    } catch (err) {
+      flash(messageOf(err), true)
+    }
+  }
+
+  /** 提交一级分类的新顺序：先按拖动结果本地重排，再落盘 */
+  const commitCategoryOrder = (ids: string[]): void => {
+    const row = parentRowRef.current
+    if (row) {
+      const rects = new Map<string, { left: number; top: number }>()
+      row.querySelectorAll<HTMLElement>('[data-cat-id]').forEach((node) => {
+        const id = node.dataset.catId ?? ''
+        if (!id) return
+        const box = node.getBoundingClientRect()
+        rects.set(id, { left: box.left, top: box.top })
+      })
+      chipFlipRects.current = rects
+    }
+
+    setData((prev) => {
+      if (!prev) return prev
+      const positions: number[] = []
+      prev.meta.categories.forEach((item, index) => {
+        if (ids.includes(item.id)) positions.push(index)
+      })
+      const pool = ids
+        .map((id) => prev.meta.categories.find((item) => item.id === id))
+        .filter((item): item is Category => Boolean(item))
+      if (positions.length !== ids.length || pool.length !== ids.length) return prev
+      const categories = [...prev.meta.categories]
+      positions.forEach((position, index) => {
+        categories[position] = pool[index]
+      })
+      return { ...prev, meta: { ...prev.meta, categories } }
+    })
+
+    void invoke<Category[]>('reorderCategories', { ids })
+      .then((saved) => {
+        if (Array.isArray(saved) && saved.length) {
+          setData((prev) => (prev ? { ...prev, meta: { ...prev.meta, categories: saved } } : prev))
+        }
+      })
+      .catch(async (err) => {
+        flash(messageOf(err), true)
+        try {
+          apply(await invoke<LedgerData>('load'))
+        } catch {
+          /* 重新读取失败时保留本地顺序，下次写入会以磁盘内容为准 */
+        }
+      })
+  }
+
+  /**
+   * 一级分类拖动排序：
+   * 槽位在按下时固定，拖动中只平移被拖标签，不改变布局，
+   * 因此不会出现其他标签跳动、重影或指针抖动。
+   */
+  const beginCategoryDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    id: string
+  ): void => {
+    if (event.button !== 0) return
+    const origin = event.target as HTMLElement
+    if (origin.closest('.ledger-chip-x')) return
+    if (editingCategory) return
+
+    const row = parentRowRef.current
+    if (!row) return
+    const nodes = Array.from(row.querySelectorAll<HTMLElement>('[data-cat-id]'))
+    if (nodes.length < 2) return
+    const originalIds = nodes.map((node) => node.dataset.catId ?? '').filter(Boolean)
+    if (originalIds.length < 2 || !originalIds.includes(id)) return
+
+    const scroller = row.closest('.ledger-page') as HTMLElement | null
+    const node = event.currentTarget
+    categorySlots.current = nodes.map((item) => ({
+      id: item.dataset.catId ?? '',
+      left: item.offsetLeft,
+      top: item.offsetTop,
+      width: item.offsetWidth,
+      height: item.offsetHeight
+    }))
+    categoryOrder.current = originalIds
+    categoryDragRef.current = {
+      id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScroll: scroller?.scrollTop ?? 0,
+      moved: false,
+      node
+    }
+
+    let lastX = event.clientX
+    let lastY = event.clientY
+    let frame = 0
+
+    const updateDrop = (): void => {
+      const drag = categoryDragRef.current
+      if (!drag) return
+      const box = row.getBoundingClientRect()
+      const localX = lastX - box.left
+      const localY = lastY - box.top
+      const others = categorySlots.current.filter((slot) => slot.id !== drag.id)
+      if (!others.length) return
+
+      // 行优先：指针在某标签所在行之上，或同排且在中线左侧，即插到该标签之前
+      let insertAt = others.length
+      for (let index = 0; index < others.length; index += 1) {
+        const slot = others[index]
+        if (localY < slot.top) {
+          insertAt = index
+          break
+        }
+        if (localY <= slot.top + slot.height && localX < slot.left + slot.width / 2) {
+          insertAt = index
+          break
+        }
+      }
+
+      const last = others[others.length - 1]
+      const bar =
+        insertAt >= others.length
+          ? { left: last.left + last.width + 3, top: last.top, height: last.height }
+          : {
+              left: others[insertAt].left - 4,
+              top: others[insertAt].top,
+              height: others[insertAt].height
+            }
+      setDropBar((prev) =>
+        prev && prev.left === bar.left && prev.top === bar.top && prev.height === bar.height
+          ? prev
+          : bar
+      )
+
+      const next = others.map((slot) => slot.id)
+      next.splice(Math.min(insertAt, next.length), 0, drag.id)
+      categoryOrder.current = next
+    }
+
+    const autoScroll = (): void => {
+      const drag = categoryDragRef.current
+      if (!drag) return
+      if (scroller) {
+        const box = scroller.getBoundingClientRect()
+        const edge = 32
+        let scrolled = false
+        if (lastY < box.top + edge) {
+          const before = scroller.scrollTop
+          scroller.scrollTop -= Math.ceil((box.top + edge - lastY) / 4)
+          scrolled = scroller.scrollTop !== before
+        } else if (lastY > box.bottom - edge) {
+          const before = scroller.scrollTop
+          scroller.scrollTop += Math.ceil((lastY - box.bottom + edge) / 4)
+          scrolled = scroller.scrollTop !== before
+        }
+        // 页面滚动后标签的屏幕位置变了，补上滚动量才能让标签继续贴着指针
+        if (scrolled) {
+          const delta = scroller.scrollTop - drag.startScroll
+          drag.node.style.transform = `translate3d(${lastX - drag.startX}px, ${lastY - drag.startY + delta}px, 0)`
+        }
+      }
+      updateDrop()
+      frame = requestAnimationFrame(autoScroll)
+    }
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId !== event.pointerId) return
+      const drag = categoryDragRef.current
+      if (!drag) return
+      lastX = moveEvent.clientX
+      lastY = moveEvent.clientY
+      if (!drag.moved) {
+        if (Math.abs(lastX - drag.startX) < 4 && Math.abs(lastY - drag.startY) < 4) return
+        drag.moved = true
+        setDragCategoryId(drag.id)
+        drag.node.style.transition = 'none'
+        frame = requestAnimationFrame(autoScroll)
+      }
+      moveEvent.preventDefault()
+      const delta = (scroller?.scrollTop ?? 0) - drag.startScroll
+      drag.node.style.transform = `translate3d(${lastX - drag.startX}px, ${lastY - drag.startY + delta}px, 0)`
+      updateDrop()
+    }
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('blur', finish)
+      if (frame) cancelAnimationFrame(frame)
+      const drag = categoryDragRef.current
+      const moved = drag?.moved ?? false
+      categoryDragRef.current = null
+      setDragCategoryId('')
+      setDropBar(null)
+      if (!drag) return
+      if (!moved) {
+        drag.node.style.transition = ''
+        drag.node.style.transform = ''
+        return
+      }
+      // 吞掉拖动结束后的这次点击，避免误触选中或删除
+      suppressCategoryClick.current = true
+      window.setTimeout(() => {
+        suppressCategoryClick.current = false
+      }, 0)
+      if (categoryOrder.current.join('|') === originalIds.join('|')) {
+        drag.node.style.transition = 'transform 0.16s cubic-bezier(0.22, 1, 0.36, 1)'
+        drag.node.style.transform = ''
+        return
+      }
+      commitCategoryOrder(categoryOrder.current)
+      drag.node.style.transition = ''
+      drag.node.style.transform = ''
+    }
+
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    window.addEventListener('blur', finish)
+  }
+
+  useLayoutEffect(() => {
+    // 排序落位后用 FLIP 补间：先反向位移，再回零，标签滑动到位而不是瞬移
+    const previous = chipFlipRects.current
+    if (!previous) return
+    chipFlipRects.current = null
+    const row = parentRowRef.current
+    if (!row) return
+    const nodes = Array.from(row.querySelectorAll<HTMLElement>('[data-cat-id]'))
+    nodes.forEach((node) => {
+      const before = previous.get(node.dataset.catId ?? '')
+      if (!before) return
+      const box = node.getBoundingClientRect()
+      const dx = before.left - box.left
+      const dy = before.top - box.top
+      node.style.transition = 'none'
+      node.style.transform = dx || dy ? `translate3d(${dx}px, ${dy}px, 0)` : ''
+      requestAnimationFrame(() => {
+        node.style.transition = 'transform 0.18s cubic-bezier(0.22, 1, 0.36, 1)'
+        node.style.transform = ''
+      })
+    })
+  }, [parentCategories])
+
+  useEffect(() => {
+    // 切换类型或离开记账页时退出重命名，避免输入框残留在其他分类上
+    setEditingCategory(null)
+  }, [type, page])
 
   const saveEntry = async (): Promise<void> => {
     if (!meta) return
@@ -1135,19 +1523,105 @@ export default function LedgerView(): JSX.Element {
 
             {type !== 'transfer' && (
               <div className="ledger-categories">
-                <div className="ledger-chips">
-                  {parentCategories.map((parent) => (
-                    <button
-                      key={parent.id}
-                      className={selectedParent === parent.id ? 'ledger-chip is-on' : 'ledger-chip'}
-                      onClick={() => {
-                        const child = typeCategories.find((item) => item.parentId === parent.id)
-                        setCategoryId(child?.id ?? parent.id)
-                      }}
-                    >
-                      {parent.name}
-                    </button>
-                  ))}
+                <div className="ledger-chips" ref={parentRowRef}>
+                  {parentCategories.map((parent) => {
+                    const editing = editingCategory?.id === parent.id ? editingCategory : null
+                    if (editing) {
+                      return (
+                        <input
+                          key={parent.id}
+                          className="ledger-chip-rename"
+                          value={editing.name}
+                          autoFocus
+                          aria-label={`重命名一级分类 ${parent.name}`}
+                          onFocus={(event) => event.currentTarget.select()}
+                          onChange={(event) =>
+                            setEditingCategory({ id: parent.id, name: event.target.value })
+                          }
+                          onBlur={() => {
+                            if (renameSettled.current) {
+                              renameSettled.current = false
+                              return
+                            }
+                            void commitCategoryRename(true)
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              renameSettled.current = true
+                              void commitCategoryRename()
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              renameSettled.current = true
+                              setEditingCategory(null)
+                            }
+                          }}
+                        />
+                      )
+                    }
+                    return (
+                      <button
+                        key={parent.id}
+                        data-cat-id={parent.id}
+                        className={[
+                          'ledger-chip',
+                          'ledger-chip-parent',
+                          selectedParent === parent.id ? 'is-on' : '',
+                          dragCategoryId === parent.id ? 'is-dragging' : ''
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        title="拖动排序，双击重命名"
+                        onPointerDown={(event) => beginCategoryDrag(event, parent.id)}
+                        onClick={() => {
+                          if (suppressCategoryClick.current) return
+                          const child = typeCategories.find((item) => item.parentId === parent.id)
+                          setCategoryId(child?.id ?? parent.id)
+                        }}
+                        onDoubleClick={() => {
+                          if (suppressCategoryClick.current) return
+                          renameSettled.current = false
+                          setEditingCategory({ id: parent.id, name: parent.name })
+                        }}
+                      >
+                        {parent.name}
+                        {selectedParent === parent.id && (
+                          <span
+                            className="ledger-chip-x"
+                            aria-label={`删除一级分类 ${parent.name}`}
+                            title="删除该一级分类"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setDeletingCategory(parent)
+                            }}
+                          >
+                            ×
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                  <input
+                    className="ledger-chip-add ledger-chip-add-parent"
+                    value={newParentName}
+                    placeholder="+ 一级标签"
+                    aria-label="新增一级标签"
+                    onChange={(event) => setNewParentName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void addParentCategory()
+                      }
+                      if (event.key === 'Escape') setNewParentName('')
+                    }}
+                  />
+                  {dropBar && (
+                    <span
+                      className="ledger-chip-drop"
+                      style={{ left: dropBar.left, top: dropBar.top, height: dropBar.height }}
+                    />
+                  )}
                 </div>
                 <div className="ledger-chips ledger-subchips">
                   <input
@@ -1468,6 +1942,35 @@ export default function LedgerView(): JSX.Element {
               </div>
             ))}
           </section>
+
+          {deletingCategory && (
+            <div className="modal-backdrop" onClick={() => setDeletingCategory(null)}>
+              <div className="modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-title">删除一级分类</div>
+                <div className="ledger-confirm-text">
+                  确定删除「{deletingCategory.name}」？
+                </div>
+                <div className="ledger-confirm-note">
+                  {(() => {
+                    const childCount = meta.categories.filter(
+                      (item) => item.parentId === deletingCategory.id
+                    ).length
+                    return childCount > 0
+                      ? `该分类下的 ${childCount} 个二级标签会一并删除。相关流水会保留，分类改为同类型的其他一级分类。`
+                      : '相关流水会保留，分类改为同类型的其他一级分类。'
+                  })()}
+                </div>
+                <div className="ledger-confirm-actions">
+                  <button className="ghost" onClick={() => setDeletingCategory(null)}>
+                    取消
+                  </button>
+                  <button className="ledger-danger" onClick={() => void confirmRemoveCategory()}>
+                    删除
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 

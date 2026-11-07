@@ -9,7 +9,15 @@ export interface WebApp {
   file: string
   dir: string
   addedAt: number
+  /** 所属分组 id，空字符串或缺失表示未分组 */
+  groupId?: string
   missing: boolean
+}
+
+export interface AppGroup {
+  id: string
+  name: string
+  collapsed: boolean
 }
 
 export interface StorageOp {
@@ -19,6 +27,7 @@ export interface StorageOp {
 }
 
 const APP_NAMESPACE = 'apps'
+const GROUP_NAMESPACE = 'groups'
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -47,6 +56,7 @@ const MIME: Record<string, string> = {
 }
 
 const newId = (): string => `a${crypto.randomBytes(6).toString('hex')}`
+const newGroupId = (): string => `g${crypto.randomBytes(6).toString('hex')}`
 
 /** 序列化进 <script> 时避免提前闭合标签与行分隔符问题 */
 const asScriptJson = (value: unknown): string =>
@@ -242,6 +252,11 @@ function injectShim(html: string, appId: string, snapshot: Record<string, string
 
 async function storedApps(ctx: PluginContext): Promise<Omit<WebApp, 'missing'>[]> {
   return ctx.storage.get<Omit<WebApp, 'missing'>[]>(APP_NAMESPACE, [])
+}
+
+async function storedGroups(ctx: PluginContext): Promise<AppGroup[]> {
+  const list = await ctx.storage.get<AppGroup[]>(GROUP_NAMESPACE, [])
+  return Array.isArray(list) ? list : []
 }
 
 async function readApps(ctx: PluginContext): Promise<WebApp[]> {
@@ -440,7 +455,7 @@ function serialize<T>(appId: string, task: () => Promise<T>): Promise<T> {
 const mod: PluginMainModule = {
   manifest: {
     id: 'webapp',
-    name: 'HTML 应用',
+    name: 'HTML Hub',
     icon: 'app-window',
     description: '为没有后端的 HTML 页面提供本地存储与运行面板',
     version: '0.2.0',
@@ -462,6 +477,103 @@ const mod: PluginMainModule = {
 
   handlers: {
     async list(_args, ctx): Promise<WebApp[]> {
+      return readApps(ctx)
+    },
+
+    async listGroups(_args, ctx): Promise<AppGroup[]> {
+      return storedGroups(ctx)
+    },
+
+    async createGroup(args, ctx): Promise<AppGroup[]> {
+      const { name } = (args ?? {}) as { name?: string }
+      const groups = await storedGroups(ctx)
+      const next = [
+        ...groups,
+        { id: newGroupId(), name: (name ?? '').trim() || '新建分组', collapsed: false }
+      ]
+      await ctx.storage.set(GROUP_NAMESPACE, next)
+      return next
+    },
+
+    async renameGroup(args, ctx): Promise<AppGroup[]> {
+      const { id, name } = (args ?? {}) as { id: string; name?: string }
+      const groups = await storedGroups(ctx)
+      const target = groups.find((group) => group.id === id)
+      if (!target) throw new Error('分组不存在')
+      const renamed = (name ?? '').trim() || target.name
+      const next = groups.map((group) => (group.id === id ? { ...group, name: renamed } : group))
+      await ctx.storage.set(GROUP_NAMESPACE, next)
+      return next
+    },
+
+    async setGroupCollapsed(args, ctx): Promise<AppGroup[]> {
+      const { id, collapsed } = (args ?? {}) as { id: string; collapsed?: boolean }
+      const groups = await storedGroups(ctx)
+      if (!groups.some((group) => group.id === id)) throw new Error('分组不存在')
+      const next = groups.map((group) =>
+        group.id === id ? { ...group, collapsed: Boolean(collapsed) } : group
+      )
+      await ctx.storage.set(GROUP_NAMESPACE, next)
+      return next
+    },
+
+    /** 按前端拖拽后的顺序重排分组 */
+    async reorderGroups(args, ctx): Promise<AppGroup[]> {
+      const { ids } = (args ?? {}) as { ids?: string[] }
+      const groups = await storedGroups(ctx)
+      const byId = new Map(groups.map((group) => [group.id, group]))
+      const next: AppGroup[] = []
+
+      for (const id of Array.isArray(ids) ? ids : []) {
+        const group = byId.get(id)
+        if (!group) continue
+        next.push(group)
+        byId.delete(id)
+      }
+
+      for (const group of byId.values()) {
+        next.push(group)
+      }
+
+      await ctx.storage.set(GROUP_NAMESPACE, next)
+      return next
+    },
+
+    /** 删除分组本身，分组下的页面回到未分组区域 */
+    async removeGroup(args, ctx): Promise<{ groups: AppGroup[]; apps: WebApp[] }> {
+      const { id } = (args ?? {}) as { id: string }
+      const groups = await storedGroups(ctx)
+      if (!groups.some((group) => group.id === id)) throw new Error('分组不存在')
+
+      const nextGroups = groups.filter((group) => group.id !== id)
+      await ctx.storage.set(GROUP_NAMESPACE, nextGroups)
+
+      const apps = await storedApps(ctx)
+      if (apps.some((app) => app.groupId === id)) {
+        await ctx.storage.set(
+          APP_NAMESPACE,
+          apps.map((app) => (app.groupId === id ? { ...app, groupId: '' } : app))
+        )
+      }
+
+      return { groups: nextGroups, apps: await readApps(ctx) }
+    },
+
+    /** 把单个页面归类到分组，groupId 为空表示移出分组 */
+    async assignGroup(args, ctx): Promise<WebApp[]> {
+      const { id, groupId = '' } = (args ?? {}) as { id: string; groupId?: string }
+      const apps = await storedApps(ctx)
+      if (!apps.some((app) => app.id === id)) throw new Error('应用未登记')
+
+      const nextGroup = String(groupId ?? '')
+      if (nextGroup && !(await storedGroups(ctx)).some((group) => group.id === nextGroup)) {
+        throw new Error('分组不存在')
+      }
+
+      await ctx.storage.set(
+        APP_NAMESPACE,
+        apps.map((app) => (app.id === id ? { ...app, groupId: nextGroup } : app))
+      )
       return readApps(ctx)
     },
 

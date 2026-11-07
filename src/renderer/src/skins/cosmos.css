@@ -1041,6 +1041,11 @@
   backdrop-filter: blur(6px) saturate(1.04);
 }
 
+/* 已登记边栏浮在内容之上，需要更高的不透明度保证文字可读 */
+[data-skin='cosmos'] .app-rail-sheet {
+  background: rgba(10, 12, 20, 0.98);
+}
+
 [data-skin='cosmos'] .list-item {
   border-bottom: 1px solid rgba(236, 228, 210, 0.07);
 }

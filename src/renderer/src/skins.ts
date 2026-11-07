@@ -40,7 +40,7 @@ export const SKINS: Skin[] = [
   {
     id: 'whirl',
     name: '旋白',
-    hint: '灰白实验 · 半调点阵 · 旋转动效',
+    hint: '灰白实验 · 字符动效 · 毛玻璃',
     swatch: ['#f1f1ee', '#1b1b19', '#a9a9a2']
   },
   {
