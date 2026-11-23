@@ -17,7 +17,8 @@ interface LegacyPrompt {
   category?: string
   emoji?: string
   tags?: unknown[]
-  role?: string
+  updatedDate?: string
+  version?: string
   content?: string
   updatedAt?: number
 }
@@ -41,7 +42,8 @@ function normalize(entry: LegacyPrompt): PromptEntry {
     tags: Array.isArray(entry.tags)
       ? entry.tags.map((value) => String(value)).filter(Boolean)
       : [],
-    role: entry.role ?? '',
+    updatedDate: entry.updatedDate ?? '',
+    version: entry.version ?? '',
     content: entry.content ?? '',
     updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : 0
   }
@@ -83,7 +85,8 @@ function buildMarkdown(prompts: PromptEntry[]): string {
   for (const prompt of prompts) {
     lines.push(`### ${prompt.emoji ? `${prompt.emoji} ` : ''}${prompt.title || '(未命名)'}`, '')
     lines.push(`- 标签：${prompt.tags.join(', ') || '-'}`)
-    if (prompt.role) lines.push(`- 角色：${prompt.role}`)
+    lines.push(`- 更新日期：${prompt.updatedDate || '-'}`)
+    lines.push(`- 版本：${prompt.version || '-'}`)
     lines.push('', '```text', prompt.content.trim(), '```', '')
   }
 
@@ -96,7 +99,7 @@ const mod: PluginMainModule = {
     name: '提示词',
     icon: 'file-text',
     description: '集中保存提示词，支持搜索、复制与导出',
-    version: '0.2.0'
+    version: '0.3.0'
   },
 
   handlers: {
@@ -115,7 +118,8 @@ const mod: PluginMainModule = {
         title: payload.title ?? '',
         emoji: payload.emoji ?? '',
         tags: payload.tags ?? [],
-        role: payload.role ?? '',
+        updatedDate: payload.updatedDate ?? '',
+        version: payload.version ?? '',
         content: payload.content ?? '',
         updatedAt: now()
       }

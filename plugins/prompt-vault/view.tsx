@@ -4,20 +4,38 @@ import EmojiPicker from './emoji-picker'
 import type { PromptEntry, PromptVaultData } from './types'
 import './prompt-vault.css'
 
+const today = (): string => {
+  const date = new Date()
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 const emptyPrompt = (): PromptEntry => ({
   id: '',
   title: '',
   emoji: '',
   tags: [],
-  role: '',
+  updatedDate: today(),
+  version: '',
   content: '',
   updatedAt: 0
 })
+
+/** 中英文逗号都作为标签分隔符 */
+const parseTags = (input: string): string[] =>
+  input
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+
+const formatTags = (tags: string[]): string => tags.join(', ')
 
 export default function PromptVaultView(): JSX.Element {
   const { invoke } = usePlugin('prompt-vault')
   const [data, setData] = useState<PromptVaultData>({ prompts: [] })
   const [promptDraft, setPromptDraft] = useState<PromptEntry>(emptyPrompt())
+  const [tagsText, setTagsText] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const [status, setStatus] = useState('')
   const [keyword, setKeyword] = useState('')
 
@@ -41,7 +59,15 @@ export default function PromptVaultView(): JSX.Element {
   }, [data.prompts, keyword])
 
   const pickPrompt = (entry: PromptEntry): void => {
+    setExpanded(false)
     setPromptDraft(entry)
+    setTagsText(formatTags(entry.tags))
+  }
+
+  const newPrompt = (): void => {
+    setExpanded(false)
+    setPromptDraft(emptyPrompt())
+    setTagsText('')
   }
 
   const savePrompt = async (): Promise<void> => {
@@ -50,23 +76,32 @@ export default function PromptVaultView(): JSX.Element {
       return
     }
     const creating = !promptDraft.id
-    const next = await invoke<PromptVaultData>('savePrompt', promptDraft)
+    const next = await invoke<PromptVaultData>('savePrompt', {
+      ...promptDraft,
+      tags: parseTags(tagsText)
+    })
     apply(next)
     if (creating) {
       // 新建保存后回到空白草稿，下一次保存继续新增，不会覆盖刚保存的提示词
       setPromptDraft(emptyPrompt())
+      setTagsText('')
       setStatus('已保存')
       return
     }
     const saved = next.prompts.find((item) => item.id === promptDraft.id)
-    if (saved) setPromptDraft(saved)
+    if (saved) {
+      setPromptDraft(saved)
+      setTagsText(formatTags(saved.tags))
+    }
     setStatus('已更新')
   }
 
   const removePrompt = async (): Promise<void> => {
     if (!promptDraft.id) return
     apply(await invoke<PromptVaultData>('deletePrompt', { id: promptDraft.id }))
+    setExpanded(false)
     setPromptDraft(emptyPrompt())
+    setTagsText('')
     setStatus('已删除')
   }
 
@@ -94,6 +129,13 @@ export default function PromptVaultView(): JSX.Element {
     )
   }
 
+  const subLine = (entry: PromptEntry): string => {
+    const parts = [entry.tags.join(' · ') || '无标签']
+    if (entry.updatedDate) parts.push(entry.updatedDate)
+    if (entry.version) parts.push(entry.version)
+    return parts.join(' · ')
+  }
+
   return (
     <>
       <div className="toolbar vault-toolbar">
@@ -106,12 +148,7 @@ export default function PromptVaultView(): JSX.Element {
       <div className="panes">
         <div className="list-pane">
           <div className="list-pane-head">
-            <button
-              className="ghost"
-              onClick={() => {
-                setPromptDraft(emptyPrompt())
-              }}
-            >
+            <button className="ghost" onClick={newPrompt}>
               新建
             </button>
             <input
@@ -130,9 +167,7 @@ export default function PromptVaultView(): JSX.Element {
                 {entry.emoji && <span className="prompt-emoji">{entry.emoji}</span>}
                 {entry.title}
               </div>
-              <div className="list-item-sub">
-                {entry.tags.join(' · ') || '无标签'}
-              </div>
+              <div className="list-item-sub">{subLine(entry)}</div>
             </div>
           ))}
           {!filteredPrompts.length && <div className="empty">没有匹配的提示词</div>}
@@ -154,36 +189,42 @@ export default function PromptVaultView(): JSX.Element {
                 onChange={(emoji) => setPromptDraft({ ...promptDraft, emoji })}
               />
             </div>
-            <div className="field">
-              <label>标签（逗号分隔）</label>
-              <input
-                value={promptDraft.tags.join(', ')}
-                onChange={(e) =>
-                  setPromptDraft({
-                    ...promptDraft,
-                    tags: e.target.value
-                      .split(',')
-                      .map((tag) => tag.trim())
-                      .filter(Boolean)
-                  })
-                }
-              />
-            </div>
-            <div className="field">
-              <label>角色</label>
-              <input
-                value={promptDraft.role}
-                onChange={(e) => setPromptDraft({ ...promptDraft, role: e.target.value })}
-                placeholder="system / assistant"
-              />
+            <div className="vault-prompt-meta-row">
+              <div className="field vault-prompt-tags-field">
+                <label>标签（逗号分隔）</label>
+                <input
+                  value={tagsText}
+                  onChange={(e) => setTagsText(e.target.value)}
+                  placeholder="写作, 翻译"
+                />
+              </div>
+              <div className="field vault-prompt-date-field">
+                <label>更新日期</label>
+                <input
+                  type="date"
+                  value={promptDraft.updatedDate}
+                  onChange={(e) =>
+                    setPromptDraft({ ...promptDraft, updatedDate: e.target.value })
+                  }
+                />
+              </div>
+              <div className="field vault-prompt-version-field">
+                <label>版本</label>
+                <input
+                  value={promptDraft.version}
+                  onChange={(e) => setPromptDraft({ ...promptDraft, version: e.target.value })}
+                  placeholder="1.0"
+                />
+              </div>
             </div>
             <div className="field full">
-              <label>正文</label>
+              <label>正文（双击放大）</label>
               <textarea
                 className="vault-prompt-body"
                 rows={6}
                 value={promptDraft.content}
                 onChange={(e) => setPromptDraft({ ...promptDraft, content: e.target.value })}
+                onDoubleClick={() => setExpanded(true)}
               />
             </div>
           </div>
@@ -209,6 +250,29 @@ export default function PromptVaultView(): JSX.Element {
           </div>
         </div>
       </div>
+
+      {expanded && (
+        <div className="modal-backdrop" onClick={() => setExpanded(false)}>
+          <div className="modal vault-prompt-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">
+              正文 · {promptDraft.title.trim() || '未命名'}
+            </div>
+            <textarea
+              className="vault-prompt-body vault-prompt-body-lg"
+              autoFocus
+              value={promptDraft.content}
+              onChange={(e) => setPromptDraft({ ...promptDraft, content: e.target.value })}
+            />
+            <div className="row vault-prompt-modal-actions">
+              <span className="dim">{promptDraft.content.length} 字符</span>
+              <div className="spacer" />
+              <button className="ghost" onClick={() => setExpanded(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="status">
         <span>提示词 {data.prompts.length} 条</span>

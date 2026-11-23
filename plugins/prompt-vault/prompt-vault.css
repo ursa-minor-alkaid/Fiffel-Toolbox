@@ -17,13 +17,59 @@
   vertical-align: -1px;
 }
 
+/* 标签与日期、版本同排，后两者保持短输入框宽度 */
+.vault-prompt-meta-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.vault-prompt-tags-field {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.vault-prompt-date-field {
+  flex: 0 0 138px;
+}
+
+.vault-prompt-version-field {
+  flex: 0 0 110px;
+}
+
 /* 正文框随窗口高度收缩，长文在框内滚动，操作按钮始终可见 */
 .vault-prompt-body {
-  height: clamp(96px, 18vh, 150px);
+  height: clamp(140px, 26vh, 220px);
   min-height: 0;
   line-height: 1.7;
   overflow-y: auto;
   resize: none;
+}
+
+/* 双击正文放大后的弹窗，高度固定，长文只在内部滚动 */
+.modal.vault-prompt-modal {
+  display: flex;
+  flex-direction: column;
+  width: 720px;
+  max-width: 92vw;
+  height: 540px;
+  max-height: 84vh;
+}
+
+.vault-prompt-body-lg {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.vault-prompt-modal-actions {
+  flex: 0 0 auto;
+  padding-top: 10px;
+}
+
+.vault-prompt-modal-actions .spacer {
+  flex: 1;
 }
 
 /* 操作行吸附在编辑区底部，内容再长也不需要向下滚动才能保存或删除 */

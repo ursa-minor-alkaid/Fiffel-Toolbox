@@ -491,6 +491,31 @@
   padding: 0 12px 8px;
 }
 
+/* 大额支出单独分区，用皮肤强调色标记，不改动常规列表样式 */
+.ledger-list-large {
+  border-left: 3px solid var(--pink-deep);
+}
+
+.ledger-large-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 2px 8px;
+  border-bottom: max(1px, var(--bd)) solid var(--hairline);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-large-head span:first-child {
+  color: var(--pink-hot);
+  letter-spacing: 0.16em;
+}
+
+.ledger-large-empty {
+  min-height: 76px;
+}
+
 .ledger-day {
   display: flex;
   flex-direction: column;
@@ -537,16 +562,6 @@
   margin-left: 6px;
   font-size: 10px;
   color: var(--muted);
-}
-
-.ledger-row-desc .ledger-tag {
-  margin-left: 6px;
-  padding: 1px 5px;
-  border: max(1px, var(--bd)) solid var(--tag-border);
-  background: var(--tag-bg);
-  color: var(--pink-hot);
-  font-size: 9px;
-  letter-spacing: 0.08em;
 }
 
 .ledger-row-account {
@@ -616,6 +631,17 @@
   color: var(--muted);
   font-size: 11.5px;
   letter-spacing: 0.08em;
+}
+
+/* 账本读取失败时的重试入口 */
+.ledger-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  padding: 12px 0;
+  text-align: center;
 }
 
 /* ---------- 账户 ---------- */

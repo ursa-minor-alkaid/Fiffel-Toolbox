@@ -1,13 +1,23 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { PluginContext } from '../../src/shared/types'
-import type { Account, Category, LedgerData, Meta, StoredTxns, Txn } from './types'
+import type { Category, LedgerData, Meta, StoredTxns, Txn } from './types'
+import {
+  defaultMeta,
+  isMetaShape,
+  isStoredTxnsShape,
+  normalizeMeta,
+  normalizeStoredTxns
+} from './normalize'
 
 const SCHEMA_VERSION = 1
-const TXN_FILE = 'ledger.txns.json'
+const TXN_BASE = 'ledger.txns'
+const TXN_FILE = `${TXN_BASE}.json`
+const LARGE_TXN_BASE = 'ledger.large-txns'
+const LARGE_TXN_FILE = `${LARGE_TXN_BASE}.json`
 const META_FILE = 'ledger.meta.json'
 const KEEP_SNAPSHOTS = 7
-/** 早期版本经 ctx.storage 写入的文件名，读取时做一次性迁移 */
+/** 早期版本经 ctx.storage 写入的文件名，仅作为最后兜底 */
 const LEGACY_TXN_FILE = 'ledger.ledger.txns.json'
 const LEGACY_META_FILE = 'ledger.ledger.meta.json'
 
@@ -20,110 +30,23 @@ function localDate(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-function defaultCategories(): Category[] {
-  const expense: Array<[string, string, Array<[string, string]>]> = [
-    ['food', '餐饮', [['breakfast', '早餐'], ['lunch', '午餐'], ['dinner', '晚餐'], ['coffee', '咖啡'], ['dining', '外食']]],
-    ['transport', '交通', [['metro', '公共交通'], ['taxi', '打车'], ['rail', '火车'], ['flight', '机票']]],
-    ['home', '居住', [['rent', '房租'], ['utilities', '水电'], ['internet', '网络']]],
-    ['daily', '日用', [['grocery', '生鲜'], ['supplies', '杂货']]],
-    ['shopping', '购物', [['clothes', '衣物'], ['device', '数码']]],
-    ['health', '医疗', [['clinic', '就诊'], ['pharmacy', '药品']]],
-    ['study', '学习', [['books', '书籍'], ['course', '课程']]],
-    ['fun', '娱乐', [['movie', '影音'], ['game', '游戏']]],
-    ['sub', '订阅', [['stream', '流媒体'], ['software', '软件']]],
-    ['travel', '旅行', [['hotel', '住宿'], ['sight', '门票']]],
-    ['other', '其他', []]
-  ]
-  const income: Array<[string, string, Array<[string, string]>]> = [
-    ['salary', '工资', []],
-    ['grant', '奖学金', []],
-    ['refund', '报销', []],
-    ['interest', '利息', []],
-    ['other-income', '其他', []]
-  ]
+type ReadOutcome<T> =
+  | { kind: 'ok'; value: T }
+  | { kind: 'missing' }
+  | { kind: 'invalid' }
 
-  const list: Category[] = []
-  let order = 0
-  for (const [id, name, children] of expense) {
-    list.push({ id, name, parentId: null, type: 'expense', order: order++, archived: false })
-    for (const [childId, childName] of children) {
-      list.push({ id: childId, name: childName, parentId: id, type: 'expense', order: order++, archived: false })
-    }
-  }
-  order = 0
-  for (const [id, name, children] of income) {
-    list.push({ id, name, parentId: null, type: 'income', order: order++, archived: false })
-    for (const [childId, childName] of children) {
-      list.push({ id: childId, name: childName, parentId: id, type: 'income', order: order++, archived: false })
-    }
-  }
-  return list
-}
-
-function defaultAccounts(): Account[] {
-  const base = (id: string, name: string, type: Account['type'], order: number, initial = 0): Account => ({
-    id,
-    name,
-    type,
-    initial: initial ? { CNY: initial } : {},
-    archived: false,
-    order
-  })
-  return [
-    base('cash', '现金', 'cash', 0),
-    base('alipay', '支付宝', 'ewallet', 1),
-    base('bank-card', '银行卡', 'bank', 2),
-    base('eur-cash', '欧元现金', 'cash', 3),
-    base('n26', 'N26', 'bank', 4),
-    base('usd-bank', '美元账户', 'bank', 5)
-  ]
-}
-
-export function defaultMeta(): Meta {
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    settings: {
-      baseCurrency: 'CNY',
-      defaultAccountId: 'alipay',
-      lastCategoryId: 'lunch',
-      lastCurrency: 'CNY',
-      rateUpdatedAt: null
-    },
-    accounts: defaultAccounts(),
-    categories: defaultCategories(),
-    rates: [],
-    ratesFetchedAt: null
-  }
-}
-
-type RawMeta = Partial<Meta> & { schemaVersion?: number }
-
-function migrateMeta(raw: RawMeta | Meta | null): Meta {
-  const base = defaultMeta()
-  if (!raw || typeof raw !== 'object') return base
-  const stored = raw as RawMeta
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    settings: { ...base.settings, ...(stored.settings ?? {}) },
-    accounts: Array.isArray(stored.accounts) ? stored.accounts : base.accounts,
-    categories: Array.isArray(stored.categories) ? stored.categories : base.categories,
-    rates: Array.isArray(stored.rates) ? stored.rates : [],
-    ratesFetchedAt: typeof stored.ratesFetchedAt === 'number' ? stored.ratesFetchedAt : null
-  }
-}
-
-function migrateTxns(raw: StoredTxns | Txn[] | null): Txn[] {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  if (Array.isArray(raw.txns)) return raw.txns
-  return []
-}
+type LedgerState = { txns: Txn[]; largeTxns: Txn[]; meta: Meta }
 
 export class LedgerStore {
-  private state: { txns: Txn[]; meta: Meta } | null = null
+  private state: LedgerState | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private recovered = false
-  private migrated = false
+  private migratedTxns = false
+  private migratedMeta = false
+  private migratedLargeCategories = false
+  private metaMissing = false
+  private txnsMissing = false
+  private warnings: string[] = []
 
   constructor(private readonly ctx: PluginContext) {}
 
@@ -141,20 +64,29 @@ export class LedgerStore {
     return next
   }
 
-  private async readJson<T>(target: string): Promise<T | null> {
+  /** 只有文件不存在才视为缺失，其余读取错误向上抛出，避免把空账本写回 */
+  private async readJson<T>(target: string): Promise<ReadOutcome<T>> {
+    let raw: string
     try {
-      const raw = await fs.readFile(target, 'utf-8')
-      return JSON.parse(raw) as T
+      raw = await fs.readFile(target, 'utf-8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' }
+      throw err
+    }
+    try {
+      return { kind: 'ok', value: JSON.parse(raw) as T }
     } catch {
-      return null
+      return { kind: 'invalid' }
     }
   }
 
-  private async snapshotFiles(): Promise<string[]> {
+  /** 快照文件名以流水文件基名为前缀，常规与大额互不影响 */
+  private async snapshotFiles(base: string): Promise<string[]> {
     try {
       const names = await fs.readdir(this.dir())
+      const prefix = `${base}.`
       return names
-        .filter((name) => /^ledger\.txns\.\d{4}-\d{2}-\d{2}\.json$/.test(name))
+        .filter((name) => name.startsWith(prefix) && /^\d{4}-\d{2}-\d{2}\.json$/.test(name.slice(prefix.length)))
         .sort()
         .reverse()
     } catch {
@@ -162,63 +94,173 @@ export class LedgerStore {
     }
   }
 
-  private async readTxns(): Promise<Txn[]> {
-    const current = await this.readJson<StoredTxns | Txn[]>(this.file(TXN_FILE))
-    if (current) return migrateTxns(current)
+  /** 记录被规范化时丢弃的条数 */
+  private acceptTxns(value: StoredTxns | Txn[], label: string): Txn[] {
+    const { txns, dropped } = normalizeStoredTxns(value)
+    if (dropped > 0) this.warnings.push(`${label}有 ${dropped} 条流水结构异常，已跳过`)
+    return txns
+  }
 
-    const legacy = await this.readJson<StoredTxns | Txn[]>(this.file(LEGACY_TXN_FILE))
-    if (legacy) {
-      this.migrated = true
-      return migrateTxns(legacy)
+  /** 读取一份流水集合：主文件、备份、当日快照，旧版文件仅作最后兜底 */
+  private async readTxnCollection(
+    base: string,
+    label: string,
+    legacyName?: string
+  ): Promise<Txn[]> {
+    const file = `${base}.json`
+    let corrupt = false
+
+    const current = await this.readJson<unknown>(this.file(file))
+    if (current.kind === 'ok' && isStoredTxnsShape(current.value)) {
+      return this.acceptTxns(current.value, label)
     }
+    if (current.kind !== 'missing') corrupt = true
 
-    const backup = await this.readJson<StoredTxns | Txn[]>(`${this.file(TXN_FILE)}.bak`)
-    if (backup) {
+    const backup = await this.readJson<unknown>(`${this.file(file)}.bak`)
+    if (backup.kind === 'ok' && isStoredTxnsShape(backup.value)) {
+      const txns = this.acceptTxns(backup.value, label)
       this.recovered = true
-      return migrateTxns(backup)
+      return txns
+    }
+    if (backup.kind !== 'missing') corrupt = true
+
+    for (const name of await this.snapshotFiles(base)) {
+      const snapshot = await this.readJson<unknown>(this.file(name))
+      if (snapshot.kind === 'ok' && isStoredTxnsShape(snapshot.value)) {
+        const txns = this.acceptTxns(snapshot.value, label)
+        this.recovered = true
+        return txns
+      }
+      if (snapshot.kind !== 'missing') corrupt = true
     }
 
-    for (const name of await this.snapshotFiles()) {
-      const snapshot = await this.readJson<StoredTxns | Txn[]>(this.file(name))
-      if (snapshot) {
+    if (legacyName) {
+      // 旧版文件只作最后兜底，避免它压过更新的备份
+      const legacy = await this.readJson<unknown>(this.file(legacyName))
+      if (legacy.kind === 'ok' && isStoredTxnsShape(legacy.value)) {
+        const txns = this.acceptTxns(legacy.value, label)
+        this.migratedTxns = true
         this.recovered = true
-        return migrateTxns(snapshot)
+        return txns
       }
+      if (legacy.kind !== 'missing') corrupt = true
     }
+
+    if (corrupt) {
+      throw new Error(
+        label === '大额支出'
+          ? '大额支出文件损坏且没有可用备份，已停止加载以避免覆盖数据'
+          : '流水文件损坏且没有可用备份，已停止加载以避免覆盖数据'
+      )
+    }
+    if (label !== '大额支出') this.txnsMissing = true
     return []
   }
 
+  private async readTxns(): Promise<Txn[]> {
+    return this.readTxnCollection(TXN_BASE, '', LEGACY_TXN_FILE)
+  }
+
+  private async readLargeTxns(): Promise<Txn[]> {
+    return this.readTxnCollection(LARGE_TXN_BASE, '大额支出')
+  }
+
   private async readMeta(): Promise<Meta> {
-    const current = await this.readJson<RawMeta>(this.file(META_FILE))
-    if (current) return migrateMeta(current)
+    let corrupt = false
 
-    const legacy = await this.readJson<RawMeta>(this.file(LEGACY_META_FILE))
-    if (legacy) {
-      this.migrated = true
-      return migrateMeta(legacy)
+    const current = await this.readJson<unknown>(this.file(META_FILE))
+    if (current.kind === 'ok' && isMetaShape(current.value)) {
+      return normalizeMeta(current.value, defaultMeta())
     }
+    if (current.kind !== 'missing') corrupt = true
 
-    const backup = await this.readJson<RawMeta>(`${this.file(META_FILE)}.bak`)
-    if (backup) {
+    const backup = await this.readJson<unknown>(`${this.file(META_FILE)}.bak`)
+    if (backup.kind === 'ok' && isMetaShape(backup.value)) {
       this.recovered = true
-      return migrateMeta(backup)
+      return normalizeMeta(backup.value, defaultMeta())
     }
+    if (backup.kind !== 'missing') corrupt = true
+
+    // 旧版文件只作最后兜底，避免它压过更新的备份
+    const legacy = await this.readJson<unknown>(this.file(LEGACY_META_FILE))
+    if (legacy.kind === 'ok' && isMetaShape(legacy.value)) {
+      this.migratedMeta = true
+      this.recovered = true
+      return normalizeMeta(legacy.value, defaultMeta())
+    }
+    if (legacy.kind !== 'missing') corrupt = true
+
+    if (corrupt) throw new Error('账本元数据损坏且没有可用备份，已停止加载以避免覆盖数据')
+    this.metaMissing = true
     return defaultMeta()
   }
 
-  private async ensureState(): Promise<{ txns: Txn[]; meta: Meta }> {
+  /**
+   * 早期大额记录沿用支出分类，改为独立标签集合后按名称迁移到对应大额分类，
+   * 找不到同名分类时落到「其他」。
+   */
+  private migrateLargeCategoryRefs(meta: Meta, largeTxns: Txn[]): void {
+    if (!largeTxns.length) return
+    const byId = new Map(meta.categories.map((item) => [item.id, item]))
+    const largeCategories = meta.categories.filter((item) => item.type === 'large')
+    if (!largeCategories.length) return
+
+    const labelOf = (category: Category): string => {
+      if (!category.parentId) return category.name
+      const parent = byId.get(category.parentId)
+      return parent ? `${parent.name}/${category.name}` : category.name
+    }
+    const byLabel = new Map(largeCategories.map((item) => [labelOf(item), item]))
+    const fallback =
+      largeCategories.find((item) => !item.parentId && item.name === '其他') ??
+      largeCategories.find((item) => !item.parentId) ??
+      largeCategories[0]
+
+    let changed = false
+    for (const txn of largeTxns) {
+      if (!txn.categoryId) continue
+      const current = byId.get(txn.categoryId)
+      if (current && current.type === 'large') continue
+      const target = current ? byLabel.get(labelOf(current)) : undefined
+      txn.categoryId = target?.id ?? fallback.id
+      changed = true
+    }
+    if (changed) this.migratedLargeCategories = true
+  }
+
+  private async ensureState(): Promise<LedgerState> {
     if (!this.state) {
       await fs.mkdir(this.dir(), { recursive: true })
-      this.state = { txns: await this.readTxns(), meta: await this.readMeta() }
+      const txns = await this.readTxns()
+      const largeTxns = await this.readLargeTxns()
+      const meta = await this.readMeta()
+      this.migrateLargeCategoryRefs(meta, largeTxns)
+      if (this.metaMissing && txns.length) {
+        this.warnings.push('账户与分类的元数据缺失，已使用默认值，请先导出核对')
+      }
+      if (this.txnsMissing && !this.metaMissing) {
+        this.warnings.push('流水文件缺失，已按空账本显示，请先从数据目录核对或恢复')
+      }
+      this.metaMissing = false
+      this.txnsMissing = false
+      this.state = { txns, largeTxns, meta }
     }
     return this.state
   }
 
-  private async repairMainFiles(state: { txns: Txn[]; meta: Meta }): Promise<void> {
+  private async repairMainFiles(state: LedgerState): Promise<void> {
     try {
       await this.writeJson(TXN_FILE, { schemaVersion: SCHEMA_VERSION, txns: state.txns } satisfies StoredTxns)
     } catch {
       /* 修复失败时保持只读结果，用户仍可导出 */
+    }
+    try {
+      await this.writeJson(LARGE_TXN_FILE, {
+        schemaVersion: SCHEMA_VERSION,
+        txns: state.largeTxns
+      } satisfies StoredTxns)
+    } catch {
+      /* 同上 */
     }
     try {
       await this.writeJson(META_FILE, state.meta)
@@ -227,15 +269,33 @@ export class LedgerStore {
     }
   }
 
-  async load(): Promise<LedgerData> {
-    const state = await this.enqueue(() => this.ensureState())
-    const recovered = this.recovered
-    this.recovered = false
-    if (recovered || this.migrated) {
-      await this.repairMainFiles(state)
-      this.migrated = false
+  /** 迁移成功后把旧版文件改名，防止它在下次损坏恢复时再次抢先命中 */
+  private async retireLegacy(name: string): Promise<void> {
+    try {
+      await fs.rename(this.file(name), `${this.file(name)}.${Date.now()}.migrated`)
+    } catch {
+      /* 旧文件不存在或无法改名时忽略 */
     }
-    return { txns: state.txns, meta: state.meta, recovered }
+  }
+
+  async load(): Promise<LedgerData> {
+    return this.enqueue(async () => {
+      const state = await this.ensureState()
+      const recovered = this.recovered
+      const warning = this.warnings.length ? this.warnings.join('；') : undefined
+      this.recovered = false
+      this.warnings = []
+      if (recovered || this.migratedTxns || this.migratedMeta || this.migratedLargeCategories) {
+        // 修复写入也走队列，避免与并发保存共用临时文件
+        await this.repairMainFiles(state)
+        if (this.migratedTxns) await this.retireLegacy(LEGACY_TXN_FILE)
+        if (this.migratedMeta) await this.retireLegacy(LEGACY_META_FILE)
+        this.migratedTxns = false
+        this.migratedMeta = false
+        this.migratedLargeCategories = false
+      }
+      return { txns: state.txns, largeTxns: state.largeTxns, meta: state.meta, recovered, warning }
+    })
   }
 
   private async backupFile(name: string): Promise<void> {
@@ -251,8 +311,8 @@ export class LedgerStore {
     }
   }
 
-  private async pruneSnapshots(): Promise<void> {
-    const names = await this.snapshotFiles()
+  private async pruneSnapshots(base: string): Promise<void> {
+    const names = await this.snapshotFiles(base)
     for (const name of names.slice(KEEP_SNAPSHOTS)) {
       try {
         await fs.unlink(this.file(name))
@@ -268,7 +328,8 @@ export class LedgerStore {
     } catch {
       return
     }
-    const target = `ledger.txns.${stamp}.json`
+    const base = name.replace(/\.json$/, '')
+    const target = `${base}.${stamp}.json`
     try {
       await fs.access(this.file(target))
       return
@@ -277,21 +338,40 @@ export class LedgerStore {
     }
     try {
       await fs.copyFile(this.file(name), this.file(target))
-      await this.pruneSnapshots()
+      await this.pruneSnapshots(base)
     } catch {
       /* 快照失败不阻断写入 */
+    }
+  }
+
+  /** 每次写入使用独立临时文件，避免并发写入互相覆盖 */
+  private tempPath(target: string): string {
+    const stamp = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    return `${target}.${stamp}.tmp`
+  }
+
+  private async writeAttempt(target: string, text: string): Promise<void> {
+    const temp = this.tempPath(target)
+    try {
+      await fs.writeFile(temp, text, 'utf-8')
+      await fs.rename(temp, target)
+    } catch (err) {
+      try {
+        await fs.unlink(temp)
+      } catch {
+        /* 临时文件可能已被移走 */
+      }
+      throw err
     }
   }
 
   /** 原子写入：先写临时文件再改名，避免中途崩溃留下半截 JSON */
   private async writeJson(name: string, payload: unknown): Promise<void> {
     const target = this.file(name)
-    const temp = `${target}.tmp`
     const text = JSON.stringify(payload, null, 2)
     await fs.mkdir(this.dir(), { recursive: true })
     try {
-      await fs.writeFile(temp, text, 'utf-8')
-      await fs.rename(temp, target)
+      await this.writeAttempt(target, text)
       return
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
@@ -299,8 +379,7 @@ export class LedgerStore {
     }
     // 杀软或索引服务短暂占用句柄时延迟重试一次
     await delay(200)
-    await fs.writeFile(temp, text, 'utf-8')
-    await fs.rename(temp, target)
+    await this.writeAttempt(target, text)
   }
 
   private async persistTxns(txns: Txn[]): Promise<void> {
@@ -309,12 +388,32 @@ export class LedgerStore {
     await this.writeJson(TXN_FILE, { schemaVersion: SCHEMA_VERSION, txns } satisfies StoredTxns)
   }
 
+  private async persistLargeTxns(largeTxns: Txn[]): Promise<void> {
+    await this.backupFile(LARGE_TXN_FILE)
+    await this.snapshotToday(LARGE_TXN_FILE, localDate())
+    await this.writeJson(LARGE_TXN_FILE, {
+      schemaVersion: SCHEMA_VERSION,
+      txns: largeTxns
+    } satisfies StoredTxns)
+  }
+
   private async persistMeta(meta: Meta): Promise<void> {
     await this.backupFile(META_FILE)
     await this.writeJson(META_FILE, meta)
   }
 
-  mutateTxns<T>(work: (txns: Txn[], state: { txns: Txn[]; meta: Meta }) => T): Promise<T> {
+  /** 两文件同时失败时把流水回滚到上一份备份，避免出现新流水配旧元数据 */
+  private async restoreFileFromBackup(name: string): Promise<void> {
+    try {
+      const backup = `${this.file(name)}.bak`
+      await fs.access(backup)
+      await fs.copyFile(backup, this.file(name))
+    } catch {
+      /* 回滚失败时保持原状，由上层提示 */
+    }
+  }
+
+  mutateTxns<T>(work: (txns: Txn[], state: LedgerState) => T): Promise<T> {
     return this.enqueue(async () => {
       const state = await this.ensureState()
       const result = work(state.txns, state)
@@ -329,7 +428,21 @@ export class LedgerStore {
     })
   }
 
-  mutateMeta<T>(work: (meta: Meta, state: { txns: Txn[]; meta: Meta }) => T): Promise<T> {
+  mutateLargeTxns<T>(work: (largeTxns: Txn[], state: LedgerState) => T): Promise<T> {
+    return this.enqueue(async () => {
+      const state = await this.ensureState()
+      const result = work(state.largeTxns, state)
+      try {
+        await this.persistLargeTxns(state.largeTxns)
+      } catch (err) {
+        this.state = null
+        throw err
+      }
+      return result
+    })
+  }
+
+  mutateMeta<T>(work: (meta: Meta, state: LedgerState) => T): Promise<T> {
     return this.enqueue(async () => {
       const state = await this.ensureState()
       const result = work(state.meta, state)
@@ -343,19 +456,44 @@ export class LedgerStore {
     })
   }
 
+  /** 同时修改流水与元数据，写入失败时回滚流水，保证两文件口径一致 */
+  mutateState<T>(work: (state: LedgerState) => T): Promise<T> {
+    return this.enqueue(async () => {
+      const state = await this.ensureState()
+      const result = work(state)
+      try {
+        await this.persistTxns(state.txns)
+        await this.persistLargeTxns(state.largeTxns)
+        await this.persistMeta(state.meta)
+      } catch (err) {
+        await this.restoreFileFromBackup(TXN_FILE)
+        await this.restoreFileFromBackup(LARGE_TXN_FILE)
+        this.state = null
+        throw err
+      }
+      return result
+    })
+  }
+
   /** 只读访问当前状态，用于导出与统计 */
-  async snapshotState(): Promise<{ txns: Txn[]; meta: Meta }> {
+  async snapshotState(): Promise<LedgerState> {
     return this.enqueue(() => this.ensureState())
   }
 
   /** 整库替换，用于导入恢复；写入前沿用备份与当日快照机制 */
-  replaceAll(txns: Txn[], meta: Meta): Promise<void> {
+  replaceAll(txns: Txn[], largeTxns: Txn[], meta: Meta): Promise<void> {
     return this.enqueue(async () => {
-      this.state = { txns, meta }
+      // 旧备份中的大额记录可能仍引用支出分类，导入时一并迁移
+      this.migrateLargeCategoryRefs(meta, largeTxns)
+      this.migratedLargeCategories = false
+      this.state = { txns, largeTxns, meta }
       try {
         await this.persistTxns(txns)
+        await this.persistLargeTxns(largeTxns)
         await this.persistMeta(meta)
       } catch (err) {
+        await this.restoreFileFromBackup(TXN_FILE)
+        await this.restoreFileFromBackup(LARGE_TXN_FILE)
         this.state = null
         throw err
       }

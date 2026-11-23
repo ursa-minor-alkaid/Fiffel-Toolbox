@@ -3,7 +3,8 @@ export interface PromptEntry {
   title: string
   emoji: string
   tags: string[]
-  role: string
+  updatedDate: string
+  version: string
   content: string
   updatedAt: number
 }

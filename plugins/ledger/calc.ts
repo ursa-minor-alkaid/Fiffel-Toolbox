@@ -120,6 +120,8 @@ export function cnyRate(meta: Meta, currency: Currency): number {
 
 /** 1 单位该币种折合多少本位币 */
 export function rateToBase(meta: Meta, currency: Currency): number {
+  // 本位币自身恒为 1，缺少汇率时也能正常记录与折算
+  if (currency === meta.settings.baseCurrency) return 1
   const base = cnyRate(meta, meta.settings.baseCurrency)
   const own = cnyRate(meta, currency)
   if (!base || !own) return 0
@@ -193,11 +195,22 @@ function tokenizeAmount(text: string): string[] | null {
 }
 
 /**
+ * 统一数字输入中的逗号：
+ * 整段只有一个逗号且后面是 1 到 2 位数字时视为小数点（如 1,50），
+ * 其余情况按千分位去掉（如 1,000）。
+ */
+function normalizeNumericInput(raw: string, strip: RegExp): string {
+  const text = raw.trim().replace(strip, '')
+  if (/^-?\d*[,，]\d{1,2}$/.test(text)) return text.replace(/[,，]/, '.')
+  return text.replace(/[,，]/g, '')
+}
+
+/**
  * 解析金额输入，支持四则运算与括号，返回分。
  * 自行解析而不使用 eval / Function，避免被渲染层 CSP 拦截。
  */
 export function parseAmountToCents(raw: string): number | null {
-  const text = raw.trim().replace(/[¥€$£,，\s]/g, '')
+  const text = normalizeNumericInput(raw, /[¥€$£\s]/g)
   if (!text) return null
   const tokens = tokenizeAmount(text)
   if (!tokens || !tokens.length) return null
@@ -283,7 +296,7 @@ export function parseAmountToCents(raw: string): number | null {
 
 /** 解析汇率一类的普通小数，按原精度返回 */
 export function parseRate(raw: string): number | null {
-  const text = raw.trim().replace(/[,\s]/g, '')
+  const text = normalizeNumericInput(raw, /\s/g)
   if (!text || !/^\d*\.?\d+$/.test(text)) return null
   const value = Number(text)
   return Number.isFinite(value) && value > 0 ? value : null
@@ -314,7 +327,10 @@ export function matchesFilter(txn: Txn, filter: TxnFilter, categories: Category[
   if (filter.accountId && txn.accountId !== filter.accountId && txn.toAccountId !== filter.accountId) {
     return false
   }
-  if (filter.currency && txn.currency !== filter.currency) return false
+  if (filter.currency) {
+    const target = txn.type === 'transfer' ? txn.toCurrency : undefined
+    if (txn.currency !== filter.currency && target !== filter.currency) return false
+  }
   const keyword = (filter.keyword ?? '').trim().toLowerCase()
   if (!keyword) return true
   const label = categoryLabel(categories, txn.categoryId)
@@ -324,6 +340,15 @@ export function matchesFilter(txn: Txn, filter: TxnFilter, categories: Category[
 
 export function filterTxns(txns: Txn[], filter: TxnFilter, categories: Category[]): Txn[] {
   return txns.filter((txn) => matchesFilter(txn, filter, categories))
+}
+
+/** 起止日期之间包含首尾的天数，日期非法或倒挂时按 1 天处理 */
+function daysInclusive(from: string, to: string): number {
+  const start = new Date(`${from}T00:00:00`)
+  const end = new Date(`${to}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+  return days > 0 ? days : 1
 }
 
 export function summarize(txns: Txn[], filter: TxnFilter, meta: Meta, categories: Category[]): Summary {
@@ -342,8 +367,9 @@ export function summarize(txns: Txn[], filter: TxnFilter, meta: Meta, categories
         continue
       }
       expense += base
-      const bucket = perCurrency[txn.currency] ?? { amount: 0, count: 0 }
+      const bucket = perCurrency[txn.currency] ?? { amount: 0, count: 0, base: 0 }
       bucket.amount += txn.amount
+      bucket.base += base
       bucket.count += 1
       perCurrency[txn.currency] = bucket
     } else {
@@ -351,42 +377,75 @@ export function summarize(txns: Txn[], filter: TxnFilter, meta: Meta, categories
     }
   }
 
+  // 日平均支出：所选窗口内已过去的天数，未来日期不参与摊薄
+  const todayDate = today()
+  const windowEnd = filter.to && filter.to < todayDate ? filter.to : todayDate
+  const days = daysInclusive(filter.from || windowEnd, windowEnd)
+
   return {
     expense,
     income,
     net: income - expense,
     reimbursable,
+    dailyExpense: Math.round(expense / days),
     perCurrency
   }
 }
 
-/** 账户某币种的当前余额，单位：分 */
+/** 账户某币种的当前余额，单位：分；大额支出与常规支出共同计入 */
 export function accountBalance(
   txns: Txn[],
   account: Account,
-  currency: Currency
+  currency: Currency,
+  largeTxns: Txn[] = []
 ): number {
   let value = account.initial[currency] ?? 0
-  for (const txn of txns) {
-    if (txn.type === 'income' && txn.accountId === account.id && txn.currency === currency) {
-      value += txn.amount
-    } else if (txn.type === 'expense' && txn.accountId === account.id && txn.currency === currency) {
-      value -= txn.amount
-    } else if (txn.type === 'transfer') {
-      if (txn.accountId === account.id && txn.currency === currency) {
+  const apply = (list: Txn[]): void => {
+    for (const txn of list) {
+      if (txn.type === 'income' && txn.accountId === account.id && txn.currency === currency) {
+        value += txn.amount
+      } else if (txn.type === 'expense' && txn.accountId === account.id && txn.currency === currency) {
         value -= txn.amount
-      } else if (txn.toAccountId === account.id && txn.toCurrency === currency) {
-        value += txn.toAmount ?? 0
+      } else if (txn.type === 'transfer') {
+        if (txn.accountId === account.id && txn.currency === currency) {
+          value -= txn.amount
+        } else if (txn.toAccountId === account.id && txn.toCurrency === currency) {
+          value += txn.toAmount ?? 0
+        }
       }
     }
   }
+  apply(txns)
+  apply(largeTxns)
   return value
 }
 
-export function accountTotal(txns: Txn[], account: Account, meta: Meta): number {
-  return CURRENCIES.reduce((sum, currency) => {
-    return sum + toBaseCents(accountBalance(txns, account, currency), currency, meta)
-  }, 0)
+export interface AccountTotalDetail {
+  total: number
+  /** 有余额但缺少汇率的币种 */
+  missing: Currency[]
+}
+
+/** 账户折算合计，同时返回缺汇率而未能计入的币种 */
+export function accountTotalDetail(
+  txns: Txn[],
+  account: Account,
+  meta: Meta,
+  largeTxns: Txn[] = []
+): AccountTotalDetail {
+  let total = 0
+  const missing: Currency[] = []
+  for (const currency of CURRENCIES) {
+    const balance = accountBalance(txns, account, currency, largeTxns)
+    if (!balance) continue
+    const rate = rateToBase(meta, currency)
+    if (!rate) {
+      missing.push(currency)
+      continue
+    }
+    total += Math.round(balance * rate)
+  }
+  return { total, missing }
 }
 
 /** 该账户在某笔交易中的资金变化，用于账户流水展示 */
